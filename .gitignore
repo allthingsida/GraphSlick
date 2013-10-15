@@ -1,9 +1,9 @@
-ipch\
-Debug\
-SR\
-SemiDebug\
-Release\
-*.obh
+Debug/
 *.sdf
 *.opensdf
 *.obj
+Release/
+ipch/
+SR/
+SemiDebug/
+*.suo

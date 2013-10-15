@@ -1,0 +1,168 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="plugin.cpp" />
+    <ClCompile Include="groupman.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\include\allins.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\area.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\auto.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\bytes.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\compress.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\dbg.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\demangle.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\diskio.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\entry.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\enum.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\err.h">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\exehdr.h">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\expr.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\fixup.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\fpro.h">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\frame.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\funcs.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\gdl.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\graph.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\help.h">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\hexrays.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\ida.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\idd.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\idp.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\ieee.h">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\intel.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\ints.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\kernwin.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\lex.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\lines.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\llong.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\loader.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\md5.h">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\moves.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\nalt.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\name.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\netnode.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\offset.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\pro.h">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\prodir.h">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\queue.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\regex.h">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\search.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\segment.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\sistack.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\srarea.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\strlist.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\struct.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\typeinf.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\ua.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\xref.hpp">
+      <Filter>sdk</Filter>
+    </ClInclude>
+    <ClInclude Include="groupman.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="sdk">
+      <UniqueIdentifier>{9bf4ff27-a0ab-4e06-aa40-ecaa123bed4c}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

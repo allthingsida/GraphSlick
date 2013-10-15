@@ -292,6 +292,8 @@ nodeloc_t *groupman_t::find_nodeid_loc(int nid)
 //--------------------------------------------------------------------------
 nodeloc_t *groupman_t::find_node_loc(ea_t ea)
 {
+  //HINT: use a map with lower_bound() if this function is to be called
+  //      frequently and speed is of importance
   for (pnodedef_list_t::iterator it=all_nodes.begin();
        it != all_nodes.end();
        ++it)
