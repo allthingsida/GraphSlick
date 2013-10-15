@@ -1,0 +1,9 @@
+ipch\
+Debug\
+SR\
+SemiDebug\
+Release\
+*.obh
+*.sdf
+*.opensdf
+*.obj
