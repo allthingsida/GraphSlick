@@ -15,6 +15,18 @@ static const char STR_NODESET[]     = "NODESET";
 static const char STR_GROUP_NAME[]  = "GROUPNAME";
 
 //--------------------------------------------------------------------------
+groupdef_t::~groupdef_t()
+{
+  clear();
+}
+
+//--------------------------------------------------------------------------
+groupdef_t::groupdef_t() : selected(false), groupped(false), 
+                           inst_count(0), match_count(0)
+{
+}
+
+//--------------------------------------------------------------------------
 void groupman_t::parse_nodeset(groupdef_t *g, char *str)
 {
   // Find node group bounds
@@ -53,16 +65,39 @@ void groupman_t::parse_nodeset(groupdef_t *g, char *str)
 //--------------------------------------------------------------------------
 void groupman_t::initialize_lookups()
 {
-  // Clear previous cache
-  node_to_groups_lookup.clear();
+  // Clear previous cache structures
+  node_to_loc.clear();
+  all_nodes.clear();
 
-  //// Build new cache
-  //for (pnodegroup_list_t::iterator it=groups.begin();
-  //     it != groups.end();
-  //     ++it)
-  //{
-  //  groupdef_t &gd = *it;
-  //}
+
+  // Build new cache
+  for (pgroupdef_list_t::iterator it=groups.begin();
+       it != groups.end();
+       ++it)
+  {
+    // Walk each group definition
+    groupdef_t *gd = *it;
+    for (pnodegroup_list_t::iterator it=gd->nodegroups.begin();
+         it != gd->nodegroups.end();
+         ++it)
+    {
+      // Walk each node list
+      nodedef_list_t *nl = *it;
+      for (nodedef_list_t::iterator it=nl->begin();
+           it != nl->end();
+           ++it)
+      {
+        // Grab each node def
+        nodedef_t *nd = &*it;
+        
+        // Remember where this node is located
+        node_to_loc[nd->nid] = nodeloc_t(gd, nl, nd);
+        
+        // Remember this nodedef
+        all_nodes.push_back(nd);
+      }
+    }
+  }
 }
 
 //--------------------------------------------------------------------------
@@ -233,19 +268,6 @@ bool groupman_t::parse(const char *filename)
 }
 
 //--------------------------------------------------------------------------
-groupdef_t::~groupdef_t()
-{
-  clear();
-}
-
-//--------------------------------------------------------------------------
-groupdef_t::groupdef_t() : selected(false), groupped(false), 
-                           inst_count(0), match_count(0)
-{
-
-}
-
-//--------------------------------------------------------------------------
 void groupdef_t::clear()
 {
   for (pnodegroup_list_t::iterator it=nodegroups.begin();
@@ -255,4 +277,28 @@ void groupdef_t::clear()
     delete *it;
   }
   nodegroups.clear();
+}
+
+//--------------------------------------------------------------------------
+nodeloc_t *groupman_t::find_nodeid_loc(int nid)
+{
+  node_nodeloc_map_t::iterator it = node_to_loc.find(nid);
+  if (it == node_to_loc.end())
+    return NULL;
+  else
+    return &it->second;
+}
+
+//--------------------------------------------------------------------------
+nodeloc_t *groupman_t::find_node_loc(ea_t ea)
+{
+  for (pnodedef_list_t::iterator it=all_nodes.begin();
+       it != all_nodes.end();
+       ++it)
+  {
+    nodedef_t *nd = *it;
+    if (nd->start >= ea && ea < nd->end)
+      return find_nodeid_loc(nd->nid);
+  }
+  return NULL;
 }

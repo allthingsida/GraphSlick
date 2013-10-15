@@ -2,7 +2,10 @@
 #define __GROUPMAN__
 
 /*
-GroupManager class (c) Elias Bachaalany
+GraphSlick (c) Elias Bachaalany
+-------------------------------------
+
+GroupManager class
 
 This module define groups, nodes and related data structures.
 It also provides the group management class.
@@ -11,6 +14,7 @@ History
 --------
 
 10/10/2013 - eliasb             - First version         
+10/15/2013 - eliasb             - Added nodeloc and all_nodes lookups and corresponding lookup functions
 */
 
 
@@ -34,6 +38,12 @@ struct nodedef_t
 * @brief A list of nodes: make a group
 */
 typedef qlist<nodedef_t> nodedef_list_t;
+
+//--------------------------------------------------------------------------
+/**
+* @brief A list of node definition pointers
+*/
+typedef qlist<nodedef_t *> pnodedef_list_t;
 
 //--------------------------------------------------------------------------
 /**
@@ -77,17 +87,51 @@ struct groupdef_t
 typedef qlist<groupdef_t *> pgroupdef_list_t;
 
 //--------------------------------------------------------------------------
-// Group management class
+/**
+* @brief 
+*/
+struct nodeloc_t
+{
+  groupdef_t *gd;
+  nodedef_list_t *nl;
+  nodedef_t *nd;
+
+  nodeloc_t(): gd(NULL), nl(NULL), nd(NULL)
+  {
+  }
+  nodeloc_t(groupdef_t *gd, 
+            nodedef_list_t *nl,
+            nodedef_t *nd): gd(gd), nl(nl), nd(nd)
+  {
+  }
+};
+
+//--------------------------------------------------------------------------
+/**
+* @brief Group management class
+*/
 class groupman_t
 {
 private:
   /**
-  * @brief Node to groupdeflist lookup type
+  * @brief NodeId node location lookup map
   */
-  typedef std::map<int, pgroupdef_list_t> node_groupdeflist_map_t;
+  typedef std::map<int, nodeloc_t> node_nodeloc_map_t;
+  node_nodeloc_map_t node_to_loc;
 
-  node_groupdeflist_map_t node_to_groups_lookup;
+  /**
+  * @brief A lookup list for all node defs
+  */
+  pnodedef_list_t all_nodes;
 
+  /**
+  * @brief Groups definition
+  */
+  pgroupdef_list_t groups;
+
+  /**
+  * @brief Private copy constructor
+  */
   groupman_t(const groupman_t &) { }
 
   /**
@@ -101,10 +145,6 @@ private:
   void initialize_lookups();
 
 public:
-  /**
-  * @brief Groups definition
-  */
-  pgroupdef_list_t groups;
 
   /**
   * @brief Utility function to convert a string to the 'asize_t' type
@@ -127,7 +167,6 @@ public:
   */
   void clear();
 
-
   /**
   * @brief Add a new group definition
   */
@@ -143,5 +182,15 @@ public:
   * @brief Parse groups definition file
   */
   bool parse(const char *filename);
+
+  /**
+  * @brief Find a node location by ID
+  */
+  nodeloc_t *find_nodeid_loc(int nid);
+
+  /**
+  * @brief Find a node by an address
+  */
+  nodeloc_t *find_node_loc(ea_t ea);
 };
 #endif
