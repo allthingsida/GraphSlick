@@ -12,6 +12,7 @@ History
 10/15/2013 - eliasb             - First version
 10/21/2013 - eliasb             - Working chooser / graph renderer
 10/22/2013 - eliasb             - Version with working selection of NodeDefLists and GroupDefs
+                                - Now the graph-view closes when the panel closes
 */
 
 #pragma warning(disable: 4018 4800)
@@ -85,6 +86,7 @@ public:
   graph_viewer_t *gv;
   intseq_t sel_nodes;
   TForm *form;
+  grdata_t **parent_ref;
 
   enum refresh_modes_e
   {
@@ -105,6 +107,7 @@ public:
     this->ea = ea;
     form = NULL;
     refresh_mode = rfm_soft;
+    parent_ref = NULL;
   }
 
   /**
@@ -254,6 +257,8 @@ public:
       {
         gv = NULL;
         form = NULL;
+        if (parent_ref != NULL)
+          *parent_ref = NULL;
 
         delete this;
         result = 1;
@@ -455,7 +460,7 @@ private:
 
   void select(const intvec_t &sel)
   {
-    msg("select-cb: %d\n", sel.size());
+    enter(sel[0]);
   }
 
   /**
@@ -515,6 +520,7 @@ private:
       case chnt_gm:
       {
         //TODO: remove me or really handle multiple files
+        //TODO: this method can simply switch the working graph data ...so it can still work w/ multiple bbgroup files
         nodeloc_t *loc = chn.gm->find_nodeid_loc(0);
         if (loc == NULL || loc->nl->empty())
         {
@@ -523,6 +529,8 @@ private:
         }
 
         gr = show_graph(loc->nl->begin()->start);
+        if (gr != NULL)
+          gr->parent_ref = &gr;
         break;
       }
       // Handle double click
@@ -572,12 +580,11 @@ private:
   }
 
   /**
-  * @brief 
-  * @param 
-  * @return
+  * @brief The chooser is closed
   */
   void destroyer()
   {
+    close_graph();
     delete_singleton();
   }
 
@@ -598,6 +605,8 @@ private:
     // Show the graph
     nodedef_listp_t *nodes = gm->get_nodes();
     gr = show_graph((*nodes->begin())->start);
+    if (gr != NULL)
+      gr->parent_ref = &gr;
   }
 
 public:
