@@ -13,6 +13,7 @@ History
 10/21/2013 - eliasb             - Working chooser / graph renderer
 10/22/2013 - eliasb             - Version with working selection of NodeDefLists and GroupDefs
                                 - Now the graph-view closes when the panel closes
+                                - Factored out functions from the grdata_t class
 */
 
 #pragma warning(disable: 4018 4800)
@@ -72,6 +73,102 @@ public:
 
 //--------------------------------------------------------------------------
 /**
+* @brief Build a function flowchart
+*/
+static bool get_func_flowchart(
+  ea_t ea, 
+  qflow_chart_t &qf)
+{
+  func_t *f = get_func(ea);
+  if (f == NULL)
+    return false;
+
+  qstring s;
+  s.sprnt("$ flowchart of %a()", f->startEA);
+  qf.create(
+    s.c_str(), 
+    f, 
+    BADADDR, 
+    BADADDR, 
+    FC_PREDS);
+
+  return true;
+}
+
+//--------------------------------------------------------------------------
+static void get_disasm_text(
+    ea_t start, 
+    ea_t end, 
+    qstring *out)
+{
+  // Generate disassembly text
+  text_t txt;
+  gen_disasm_text(
+    start, 
+    end, 
+    txt, 
+    false);
+
+  // Append all disasm lines
+  for (text_t::iterator it=txt.begin(); it != txt.end(); ++it)
+  {
+    out->append(it->line);
+    out->append("\n");
+  }
+}
+
+//--------------------------------------------------------------------------
+/**
+* @brief Build a mutable graph from a function address
+*/
+static bool func_to_mgraph(
+  ea_t ea,
+  mutable_graph_t *mg,
+  gnodemap_t &node_map)
+{
+  // Build function's flowchart
+  qflow_chart_t qf;
+  if (!get_func_flowchart(ea, qf))
+  {
+    msg("%s\n", STR_CANNOT_BUILD_F_FC);
+    return false;
+  }
+
+  // Resize the graph
+  size_t nodes_count = qf.size();
+  mg->resize(nodes_count);
+
+  // Build the node cache and edges
+  for (size_t n=0; n < nodes_count; n++)
+  {
+    qbasic_block_t &block = qf.blocks[n];
+    gnode_t *nc = node_map.add(n);
+
+    // Generate disassembly text
+    nc->text.sprnt("ID(%d)\n", n);
+    get_disasm_text(block.startEA, block.endEA, &nc->text);
+
+    // Build edges
+    for (size_t isucc=0, succ_sz=qf.nsucc(n); isucc < succ_sz; isucc++)
+    {
+      int nsucc = qf.succ(n, isucc);
+      mg->add_edge(n, nsucc, NULL);
+    }
+  }
+  return true;
+}
+
+//--------------------------------------------------------------------------
+static void fc_to_combined_mg(
+    qflow_chart_t &fc,
+    groupman_t *gm,
+    mutable_graph_t *mg)
+{
+
+}
+
+//--------------------------------------------------------------------------
+/**
 * @brief Graph data/context
 */
 struct grdata_t
@@ -119,83 +216,6 @@ public:
   }
 
   /**
-  * @brief Build a mutable graph from a function address
-  */
-  bool func_to_mgraph(
-    mutable_graph_t *mg, 
-    ea_t ea = BADADDR)
-  {
-    // No address passed anew? Used the one passed in the ctor
-    if (ea == BADADDR)
-      ea = this->ea;
-
-    // Build function's flowchart
-    qflow_chart_t qf;
-    if (!get_func_flowchart(ea, qf))
-    {
-      this->err = STR_CANNOT_BUILD_F_FC;
-      return false;
-    }
-
-    // Resize the graph
-    size_t nodes_count = qf.size();
-    mg->resize(nodes_count);
-
-    // Build the node cache and edges
-    for (size_t n=0; n < nodes_count; n++)
-    {
-      qbasic_block_t &block = qf.blocks[n];
-      gnode_t *nc = node_map.add(n);
-
-      // Generate disassembly text
-      text_t txt;
-      gen_disasm_text(
-        block.startEA, 
-        block.endEA, 
-        txt, 
-        false);
-
-      // Append all lines to this node's text
-      for (text_t::iterator it=txt.begin(); it != txt.end(); ++it)
-      {
-        nc->text.append(it->line);
-        nc->text.append("\n");
-      }
-
-      // Build edges
-      for (size_t isucc=0, succ_sz=qf.nsucc(n); isucc < succ_sz; isucc++)
-      {
-        int nsucc = qf.succ(n, isucc);
-        mg->add_edge(n, nsucc, NULL);
-      }
-    }
-    return true;
-  }
-
-  /**
-  * @brief Build a function flowchart
-  */
-  bool get_func_flowchart(
-    ea_t ea, 
-    qflow_chart_t &qf)
-  {
-    func_t *f = get_func(ea);
-    if (f == NULL)
-      return false;
-
-    qstring s;
-    s.sprnt("$ flowchart of %a()", f->startEA);
-    qf.create(
-      s.c_str(), 
-      f, 
-      BADADDR, 
-      BADADDR, 
-      FC_PREDS);
-
-    return true;
-  }
-
-  /**
   * @brief 
   * @param 
   * @return
@@ -233,7 +253,7 @@ public:
         mutable_graph_t *mg = va_arg(va, mutable_graph_t *);
         if (node_map.empty() || refresh_mode == rfm_rebuild)
         {
-          func_to_mgraph(mg);
+          func_to_mgraph(this->ea, mg, node_map);
         }
         result = 1;
         break;
