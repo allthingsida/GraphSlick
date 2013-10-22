@@ -10,16 +10,12 @@ GroupManager class
 This module define groups, nodes and related data structures.
 It also provides the group management class.
 
-History
---------
-
-10/10/2013 - eliasb             - First version         
-10/15/2013 - eliasb             - Added nodeloc and all_nodes lookups and corresponding lookup functions
 */
 
 
 //--------------------------------------------------------------------------
 #include <pro.h>
+#include <set>
 
 //--------------------------------------------------------------------------
 struct nodedef_t
@@ -43,17 +39,17 @@ typedef qlist<nodedef_t> nodedef_list_t;
 /**
 * @brief A list of node definition pointers
 */
-typedef qlist<nodedef_t *> pnodedef_list_t;
+typedef qlist<nodedef_t *> nodedef_listp_t;
 
 //--------------------------------------------------------------------------
 /**
-* @brief A list of groups
+* @brief A list of node groups
 */
-typedef qlist<nodedef_list_t *> pnodegroup_list_t;
+typedef qlist<nodedef_list_t *> nodegroup_listp_t;
 
 //--------------------------------------------------------------------------
 /**
-* @brief 
+* @brief Group definition
 */
 struct groupdef_t
 {
@@ -63,7 +59,7 @@ struct groupdef_t
   bool groupped;
   asize_t inst_count;
   asize_t match_count;
-  pnodegroup_list_t nodegroups;
+  nodegroup_listp_t nodegroups;
 
   groupdef_t();
   ~groupdef_t();
@@ -85,6 +81,7 @@ struct groupdef_t
   }
 };
 typedef qlist<groupdef_t *> pgroupdef_list_t;
+typedef std::set<groupdef_t *> pgroupdef_set_t;
 
 //--------------------------------------------------------------------------
 /**
@@ -108,6 +105,31 @@ struct nodeloc_t
 
 //--------------------------------------------------------------------------
 /**
+* @brief Node network class
+*/
+class groupnet_t
+{
+  typedef std::map<groupdef_t *, pgroupdef_set_t *> groupnet_map_t;
+  groupnet_map_t network;
+public:
+  /**
+  * @brief Clear the network
+  */
+  void clear();
+
+  /**
+  * @brief Return the successor group def set
+  */
+  pgroupdef_set_t *get_succs(groupdef_t *key);
+
+  ~groupnet_t()
+  {
+    clear();
+  }
+};
+
+//--------------------------------------------------------------------------
+/**
 * @brief Group management class
 */
 class groupman_t
@@ -119,10 +141,12 @@ private:
   typedef std::map<int, nodeloc_t> node_nodeloc_map_t;
   node_nodeloc_map_t node_to_loc;
 
+  qstring filename;
+
   /**
   * @brief A lookup list for all node defs
   */
-  pnodedef_list_t all_nodes;
+  nodedef_listp_t all_nodes;
 
   /**
   * @brief Groups definition
@@ -145,6 +169,11 @@ private:
   void initialize_lookups();
 
 public:
+
+  /**
+  * @brief Groups definition
+  */
+  pgroupdef_list_t *get_groups() { return &groups; }
 
   /**
   * @brief Utility function to convert a string to the 'asize_t' type
@@ -192,5 +221,7 @@ public:
   * @brief Find a node by an address
   */
   nodeloc_t *find_node_loc(ea_t ea);
+
+  const char *get_source_file();
 };
 #endif

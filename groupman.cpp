@@ -5,6 +5,17 @@
 #include <fstream>
 #include <iostream>
 
+/*
+History
+--------
+
+10/10/2013 - eliasb             - First version         
+10/15/2013 - eliasb             - Added nodeloc and all_nodes lookups and corresponding lookup functions
+10/21/2013 - eliasb             - Added groupnet_t class
+                                - Change some type names
+								- Moved history comment block to the cpp file
+*/
+
 //--------------------------------------------------------------------------
 static const char STR_ID[]          = "ID";
 static const char STR_MATCH_COUNT[] = "MC";
@@ -13,6 +24,41 @@ static const char STR_GROUPPED[]    = "GROUPPED";
 static const char STR_SELECTED[]    = "SELECTED";
 static const char STR_NODESET[]     = "NODESET";
 static const char STR_GROUP_NAME[]  = "GROUPNAME";
+
+//--------------------------------------------------------------------------
+//--  GROUP NETWORK CLASS  -------------------------------------------------
+//--------------------------------------------------------------------------
+
+//--------------------------------------------------------------------------
+void groupnet_t::clear()
+{
+  for (groupnet_map_t::iterator it=network.begin();
+    it != network.end();
+    ++it)
+  {
+    delete it->second;
+  }
+}
+
+//--------------------------------------------------------------------------
+pgroupdef_set_t * groupnet_t::get_succs(groupdef_t *key)
+{
+  groupnet_map_t::iterator it = network.find(key);
+  if (it != network.end())
+    return it->second;
+
+  // Create a new groupdef set
+  pgroupdef_set_t *succs = new pgroupdef_set_t();
+
+  // Insert it into the network by key
+  network[key] = succs;
+
+  return succs;
+}
+
+//--------------------------------------------------------------------------
+//--  GROUP DEFINITION CLASS  ----------------------------------------------
+//--------------------------------------------------------------------------
 
 //--------------------------------------------------------------------------
 groupdef_t::~groupdef_t()
@@ -25,6 +71,10 @@ groupdef_t::groupdef_t() : selected(false), groupped(false),
                            inst_count(0), match_count(0)
 {
 }
+
+//--------------------------------------------------------------------------
+//--  GROUP MANAGER CLASS  -------------------------------------------------
+//--------------------------------------------------------------------------
 
 //--------------------------------------------------------------------------
 void groupman_t::parse_nodeset(groupdef_t *g, char *str)
@@ -69,7 +119,6 @@ void groupman_t::initialize_lookups()
   node_to_loc.clear();
   all_nodes.clear();
 
-
   // Build new cache
   for (pgroupdef_list_t::iterator it=groups.begin();
        it != groups.end();
@@ -77,7 +126,7 @@ void groupman_t::initialize_lookups()
   {
     // Walk each group definition
     groupdef_t *gd = *it;
-    for (pnodegroup_list_t::iterator it=gd->nodegroups.begin();
+    for (nodegroup_listp_t::iterator it=gd->nodegroups.begin();
          it != gd->nodegroups.end();
          ++it)
     {
@@ -143,6 +192,8 @@ groupdef_t *groupman_t::add_group()
 bool groupman_t::emit(const char *filename)
 {
   FILE *fp = qfopen(filename, "w");
+  if (fp == NULL)
+    return false;
 
   for (pgroupdef_list_t::iterator it=groups.begin();
     it != groups.end();
@@ -163,14 +214,15 @@ bool groupman_t::emit(const char *filename)
     if (gd.groupped)
       qfprintf(fp, "%s:1;", STR_GROUPPED);
 
+    // Write 'is-selected'
     if (gd.selected)
       qfprintf(fp, "%s:1;", STR_SELECTED);
 
     size_t group_count = gd.nodegroups.size();
     if (group_count > 0)
     {
-      pnodegroup_list_t &ngl = gd.nodegroups;
-      for (pnodegroup_list_t::iterator it = ngl.begin(); it != ngl.end(); ++it)
+      nodegroup_listp_t &ngl = gd.nodegroups;
+      for (nodegroup_listp_t::iterator it = ngl.begin(); it != ngl.end(); ++it)
       {
         nodedef_list_t *nl = *it;
 
@@ -190,7 +242,8 @@ bool groupman_t::emit(const char *filename)
     qfprintf(fp, "\n");
   }
   qfclose(fp);
-  return false;
+
+  return true;
 }
 
 //--------------------------------------------------------------------------
@@ -199,6 +252,9 @@ bool groupman_t::parse(const char *filename)
   std::ifstream in_file(filename);
   if (!in_file.is_open())
     return false;
+
+  // Remember the opened file name
+  this->filename = filename;
 
   // Clear previous group def
   clear();
@@ -270,7 +326,7 @@ bool groupman_t::parse(const char *filename)
 //--------------------------------------------------------------------------
 void groupdef_t::clear()
 {
-  for (pnodegroup_list_t::iterator it=nodegroups.begin();
+  for (nodegroup_listp_t::iterator it=nodegroups.begin();
        it != nodegroups.end();
        ++it)
   {
@@ -294,7 +350,7 @@ nodeloc_t *groupman_t::find_node_loc(ea_t ea)
 {
   //HINT: use a map with lower_bound() if this function is to be called
   //      frequently and speed is of importance
-  for (pnodedef_list_t::iterator it=all_nodes.begin();
+  for (nodedef_listp_t::iterator it=all_nodes.begin();
        it != all_nodes.end();
        ++it)
   {
@@ -303,4 +359,10 @@ nodeloc_t *groupman_t::find_node_loc(ea_t ea)
       return find_nodeid_loc(nd->nid);
   }
   return NULL;
+}
+
+//--------------------------------------------------------------------------
+const char *groupman_t::get_source_file()
+{
+  return filename.c_str();
 }
