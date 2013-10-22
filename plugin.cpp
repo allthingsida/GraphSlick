@@ -10,6 +10,8 @@ History
 --------
 
 10/15/2013 - eliasb             - First version
+10/21/2013 - eliasb             - Working chooser / graph renderer
+10/22/2013 - eliasb             - Version with working selection of NodeDefLists and GroupDefs
 */
 
 #pragma warning(disable: 4018 4800)
@@ -22,7 +24,11 @@ History
 #include "groupman.h"
 
 //--------------------------------------------------------------------------
+#define MY_TABSTR "    "
+
+//--------------------------------------------------------------------------
 static const char STR_CANNOT_BUILD_F_FC[] = "Cannot build function flowchart!";
+static const char STR_GS_PANEL[]          = "Graph Slick - Panel";
 
 //--------------------------------------------------------------------------
 /**
@@ -76,7 +82,17 @@ private:
 public:
   int cur_node;
   const char *err;
-  graph_viewer_t **ref_gv;
+  graph_viewer_t *gv;
+  intseq_t sel_nodes;
+  TForm *form;
+
+  enum refresh_modes_e
+  {
+    rfm_soft    = 0,
+    rfm_rebuild = 1,
+  };
+
+  int refresh_mode;
 
   /**
   * @brief Constructor
@@ -85,8 +101,10 @@ public:
   {
     cur_node = 0;
     err = NULL;
-    ref_gv = NULL;
+    gv = NULL;
     this->ea = ea;
+    form = NULL;
+    refresh_mode = rfm_soft;
   }
 
   /**
@@ -202,6 +220,7 @@ public:
       {
         va_arg(va, graph_viewer_t *);
         cur_node = va_argi(va, int);
+        //TODO: select all nodes in its group (NDL)
         break;
       }
 
@@ -209,26 +228,33 @@ public:
       case grcode_user_refresh:
       {
         mutable_graph_t *mg = va_arg(va, mutable_graph_t *);
-        func_to_mgraph(mg);
+        if (node_map.empty() || refresh_mode == rfm_rebuild)
+        {
+          func_to_mgraph(mg);
+        }
         result = 1;
         break;
       }
 
-      // retrieve text for user-defined graph node
+      // retrieve text and background color for the user-defined graph node
       case grcode_user_text:    
       {
         va_arg(va, mutable_graph_t *);
         int node           = va_arg(va, int);
         const char **text  = va_arg(va, const char **);
-        va_arg(va, bgcolor_t *);
+        bgcolor_t *bgcolor = va_arg(va, bgcolor_t *);
 
         *text = get_node(node)->text.c_str();
-
+        if (bgcolor != NULL && sel_nodes.contains(node))
+          *bgcolor = 0xcaf4cb;
         result = 1;
         break;
       }
       case grcode_destroyed:
       {
+        gv = NULL;
+        form = NULL;
+
         delete this;
         result = 1;
         break;
@@ -239,9 +265,7 @@ public:
 };
 
 //--------------------------------------------------------------------------
-static void show_graph(
-    ea_t ea = BADADDR, 
-    graph_viewer_t **out_gv = NULL)
+static grdata_t *show_graph(ea_t ea = BADADDR)
 {
   if (ea == BADADDR)
     ea = get_screen_ea();
@@ -251,7 +275,7 @@ static void show_graph(
   if (f == NULL)
   {
     msg("No function here!\n");
-    return;
+    return NULL;
   }
 
   for (int i=0;i<2;i++)
@@ -276,17 +300,19 @@ static void show_graph(
         0);
       open_tform(form, FORM_TAB|FORM_MENU|FORM_QWIDGET);
       if (gv != NULL)
+      {
+        ctx->gv = gv;
+        ctx->form = form;
         viewer_fit_window(gv);
-
-      ctx->ref_gv = out_gv;
-
-      break;
+      }
+      return ctx;
     }
     else
     {
       close_tform(form, 0);
     }
   }
+  return NULL;
 }
 
 //--------------------------------------------------------------------------
@@ -301,7 +327,6 @@ private:
   {
     chnt_gm  = 0,
     chnt_gd  = 1,
-    chnt_ngl = 2,
     chnt_nl  = 3,
   };
 
@@ -322,7 +347,11 @@ private:
       nl = NULL;
     }
 
-
+    /**
+    * @brief 
+    * @param 
+    * @return
+    */
     void get_desc(qstring *out)
     {
       switch (type)
@@ -334,24 +363,26 @@ private:
         }
         case chnt_gd:
         {
-          out->sprnt("  %s (%s)", gd->groupname.c_str(), gd->id.c_str());
-          break;
-        }
-        case chnt_ngl:
-        {
-          out->sprnt("    NGL(%d)", ngl->size());
+          out->sprnt(MY_TABSTR "%s (%s) NGL(%d)", 
+            gd->groupname.c_str(), 
+            gd->id.c_str(),
+            ngl->size());
           break;
         }
         case chnt_nl:
         {
-          *out = "      ";
+          size_t sz = nl->size();
+          out->sprnt(MY_TABSTR MY_TABSTR "NDL(%d):(", sz);
           for (nodedef_list_t::iterator it=nl->begin();
                it != nl->end();
                ++it)
           {
             nodedef_t *nd = &*it;
             out->cat_sprnt("%d:%a:%a", nd->nid, nd->start, nd->end);
+            if (--sz > 0)
+              out->append(", ");
           }
+          out->append(")");
           break;
         }
       }
@@ -362,7 +393,8 @@ private:
   chooser_node_vec_t ch_nodes;
 
   chooser_info_t chi;
-
+  grdata_t *gr;
+  groupman_t *gm;
 
   static uint32 idaapi s_sizer(void *obj)
   {
@@ -404,6 +436,11 @@ private:
     ((mychooser_t *)obj)->destroyer();
   }
 
+  static void idaapi s_select(void *obj, const intvec_t &sel)
+  {
+    ((mychooser_t *)obj)->select(sel);
+  }
+
   /**
   * @brief Delete the singleton instance if applicable
   */
@@ -416,11 +453,22 @@ private:
     singleton = NULL;
   }
 
+  void select(const intvec_t &sel)
+  {
+    msg("select-cb: %d\n", sel.size());
+  }
+
+  /**
+  * @brief Return the items count
+  */
   uint32 sizer()
   {
     return ch_nodes.size();
   }
 
+  /**
+  * @brief Get textual representation of a given line
+  */
   void getl(uint32 n, char *const *arrptr)
   {
     // Return the column name
@@ -457,33 +505,99 @@ private:
 
   void enter(uint32 n)
   {
-    if (!IS_SEL(n) || n >= ch_nodes.size())
+    if (!IS_SEL(n) || n > ch_nodes.size())
       return;
-
 
     chooser_node_t &chn = ch_nodes[n-1];
-    nodeloc_t *loc = chn.gm->find_nodeid_loc(0);
-    if (loc == NULL || loc->nl->empty())
-    {
-      msg("Could not show graph from this selection!\n");
-      return;
-    }
 
-    show_graph(loc->nl->begin()->start);
+    switch (chn.type)
+    {
+      case chnt_gm:
+      {
+        //TODO: remove me or really handle multiple files
+        nodeloc_t *loc = chn.gm->find_nodeid_loc(0);
+        if (loc == NULL || loc->nl->empty())
+        {
+          msg("Could not show graph from this selection!\n");
+          return;
+        }
+
+        gr = show_graph(loc->nl->begin()->start);
+        break;
+      }
+      // Handle double click
+      case chnt_nl:
+      case chnt_gd:
+      {
+        if (gr == NULL || gr->gv == NULL)
+          break;
+
+        gr->sel_nodes.clear();
+        if (chn.type == chnt_nl)
+        {
+          for (nodedef_list_t::iterator it = chn.nl->begin();
+               it != chn.nl->end();
+               ++it)
+          {
+            gr->sel_nodes.add(it->nid);
+          }
+        }
+        else for (nodegroup_listp_t::iterator it=chn.ngl->begin();
+                  it != chn.ngl->end();
+                  ++it)
+        {
+          nodedef_list_t *nl = *it;
+          for (nodedef_list_t::iterator it = nl->begin();
+               it != nl->end();
+               ++it)
+          {
+            gr->sel_nodes.add(it->nid);
+          }
+        }
+
+        refresh_viewer(gr->gv);
+        break;
+      }
+    }
   }
 
+  /**
+  * @brief Close the graph view
+  */
+  void close_graph()
+  {
+    if (gr == NULL && gr->form != NULL)
+      return;
+    close_tform(gr->form, 0);
+  }
+
+  /**
+  * @brief 
+  * @param 
+  * @return
+  */
   void destroyer()
   {
     delete_singleton();
   }
 
+  /**
+  * @brief 
+  * @param 
+  * @return
+  */
   void idaapi refresh()
   {
   }
 
   void idaapi initializer()
   {
-    load_file("P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\f1.bbgroup");
+    if (!load_file("P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\f1.bbgroup"))
+      return;
+
+    // Show the graph
+    nodedef_listp_t *nodes = gm->get_nodes();
+    gr = show_graph((*nodes->begin())->start);
   }
 
 public:
@@ -494,7 +608,7 @@ public:
     chi.flags = 0;
     chi.width = -1;
     chi.height = -1;
-    chi.title = "Graph Slick";
+    chi.title = STR_GS_PANEL;
     chi.obj = this;
     chi.columns = 1;
 
@@ -511,6 +625,7 @@ public:
     chi.enter       = s_enter;
     chi.destroyer   = s_destroyer;
     chi.refresh     = s_refresh;
+    chi.select      = s_select;
     chi.initializer = s_initializer;
 
     //chi.popup_names = NULL;   // first 5 menu item names (insert, delete, edit, refresh, copy)
@@ -518,7 +633,9 @@ public:
     //void (idaapi *edit)(void *obj, uint32 n);
     //static int idaapi s_get_icon)(void *obj, uint32 n);
     //void (idaapi *get_attrs)(void *obj, uint32 n, chooser_item_attrs_t *attrs);
-    //static void idaapi s_select(void *obj, const intvec_t & sel);
+
+    gr = NULL;
+    gm = NULL;
   }
 
   /**
@@ -527,7 +644,8 @@ public:
   bool load_file(const char *filename)
   {
     // Load a file and parse it
-    groupman_t *gm = new groupman_t();
+    delete gm;
+    gm = new groupman_t();
     if (!gm->parse(filename))
     {
       msg("error: failed to parse group file '%s'\n", filename);
@@ -548,17 +666,11 @@ public:
 
       // Add the second-level node = a set of group defs
       node = &ch_nodes.push_back();
+      nodegroup_listp_t &ngl = gd.nodegroups;
       node->type = chnt_gd;
       node->gd   = &gd;
       node->gm   = gm;
-
-      // Add the second-level node = a set of group defs
-      nodegroup_listp_t &ngl = gd.nodegroups;
-      node = &ch_nodes.push_back();
-      node->type = chnt_ngl;
-      node->ngl = &ngl;
-      node->gm  = gm;
-      node->gd  = &gd;
+      node->ngl  = &ngl;
 
       // Add each nodedef list within each node group
       for (nodegroup_listp_t::iterator it = ngl.begin();

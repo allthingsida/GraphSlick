@@ -175,6 +175,8 @@ public:
   */
   pgroupdef_list_t *get_groups() { return &groups; }
 
+  nodedef_listp_t *get_nodes() { return &all_nodes; }
+
   /**
   * @brief Utility function to convert a string to the 'asize_t' type
            It works based on the EA64 define

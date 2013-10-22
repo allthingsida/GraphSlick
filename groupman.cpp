@@ -13,7 +13,8 @@ History
 10/15/2013 - eliasb             - Added nodeloc and all_nodes lookups and corresponding lookup functions
 10/21/2013 - eliasb             - Added groupnet_t class
                                 - Change some type names
-								- Moved history comment block to the cpp file
+                                - Moved history comment block to the cpp file
+10/22/2013 - eliasb             - Added gm.get_nodes()
 */
 
 //--------------------------------------------------------------------------
