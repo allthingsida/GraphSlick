@@ -1,7 +1,7 @@
 #ifndef __GROUPMAN__
 #define __GROUPMAN__
 
-/*
+/*--------------------------------------------------------------------------
 GraphSlick (c) Elias Bachaalany
 -------------------------------------
 
@@ -10,7 +10,7 @@ GroupManager class
 This module define groups, nodes and related data structures.
 It also provides the group management class.
 
-*/
+--------------------------------------------------------------------------*/
 
 
 //--------------------------------------------------------------------------

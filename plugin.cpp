@@ -26,6 +26,8 @@ History
 #include <loader.hpp>
 #include <kernwin.hpp>
 #include "groupman.h"
+#include "util.h"
+#include "algo.hpp"
 
 //--------------------------------------------------------------------------
 #define MY_TABSTR "    "
@@ -36,285 +38,6 @@ static const char STR_GS_PANEL[]          = "Graph Slick - Panel";
 static const char STR_GS_VIEW[]           = "Graph Slick - View";
 static const char STR_OUTWIN_TITLE[]      = "Output window";
 static const char STR_IDAVIEWA_TITLE[]    = "IDA View-A";
-
-//--------------------------------------------------------------------------
-/**
-* @brief Node data class. It will be served from the graph callback
-*/
-struct gnode_t
-{
-  int id;
-  qstring text;
-};
-
-//--------------------------------------------------------------------------
-/**
-* @brief Utility map class to store gnode_t types
-*/
-class gnodemap_t: public std::map<int, gnode_t>
-{
-public:
-  /**
-  * @brief Add a node to the map
-  */
-  gnode_t *add(int nid)
-  {
-    gnode_t *node = &(insert(std::make_pair(nid, gnode_t())).first->second);
-    return node;
-  }
-
-  /**
-  * @brief Return node data
-  */
-  gnode_t *get(int nid)
-  {
-    gnodemap_t::iterator it = find(nid);
-    if ( it == end() )
-      return NULL;
-    else
-      return &it->second;
-  }
-};
-
-//--------------------------------------------------------------------------
-/**
-* @brief Build a function flowchart
-*/
-static bool get_func_flowchart(
-  ea_t ea, 
-  qflow_chart_t &qf)
-{
-  func_t *f = get_func(ea);
-  if (f == NULL)
-    return false;
-
-  qstring s;
-  s.sprnt("$ flowchart of %a()", f->startEA);
-  qf.create(
-    s.c_str(), 
-    f, 
-    BADADDR, 
-    BADADDR, 
-    FC_PREDS);
-
-  return true;
-}
-
-//--------------------------------------------------------------------------
-/**
-* @brief Get the disassembly text into a qstring
-*/
-static void get_disasm_text(
-    ea_t start, 
-    ea_t end, 
-    qstring *out)
-{
-  // Generate disassembly text
-  text_t txt;
-  gen_disasm_text(
-    start, 
-    end, 
-    txt, 
-    false);
-
-  // Append all disasm lines
-  for (text_t::iterator it=txt.begin(); it != txt.end(); ++it)
-  {
-    out->append(it->line);
-    out->append("\n");
-  }
-}
-
-//--------------------------------------------------------------------------
-/**
-* @brief Build a mutable graph from a function address
-*/
-static bool func_to_mgraph(
-    ea_t ea,
-    mutable_graph_t *mg,
-    gnodemap_t &node_map)
-{
-  // Build function's flowchart
-  qflow_chart_t qf;
-  if (!get_func_flowchart(ea, qf))
-    return false;
-
-  // Resize the graph
-  int nodes_count = qf.size();
-  mg->resize(nodes_count);
-
-  // Build the node cache and edges
-  for (int n=0; n < nodes_count; n++)
-  {
-    qbasic_block_t &block = qf.blocks[n];
-    gnode_t *nc = node_map.add(n);
-
-    // Generate disassembly text
-    nc->text.sprnt("ID(%d)\n", n);
-    get_disasm_text(block.startEA, block.endEA, &nc->text);
-
-    // Build edges
-    for (int isucc=0, succ_sz=qf.nsucc(n); isucc < succ_sz; isucc++)
-    {
-      int nsucc = qf.succ(n, isucc);
-      mg->add_edge(n, nsucc, NULL);
-    }
-  }
-  return true;
-}
-
-//--------------------------------------------------------------------------
-/**
-* @brief Creates a mutable graph that have the combined nodes per the groupmanager
-*        A class was used to simulate nested functions needed by the combine algo
-*/
-class fc_to_combined_mg_t
-{
-  // Create a mapping between single node ids and the nodedef list they belong to
-  typedef std::map<nodedef_list_t *, int> ndl2id_t;
-  ndl2id_t ndl2id;
-
-  gnodemap_t *node_map;
-  groupman_t *gm;
-  qflow_chart_t *fc;
-  bool show_nids_only;
-
-  /**
-  * @brief Create and return a groupped node ID
-  */
-  int get_ndlid(int n)
-  {
-    int ndl_id;
-
-    // Find how this single node is defined in the group manager
-    nodeloc_t *loc = gm->find_nodeid_loc(n);
-    
-    // Does this node have a group yet? (ndl)
-    ndl2id_t::iterator it = ndl2id.find(loc->nl);
-    if (it == ndl2id.end())
-    {
-      // Assign an auto-incr id
-      ndl_id = ndl2id.size();  
-      ndl2id[loc->nl] = ndl_id;
-
-      // Initial text for this ndl is the current single node id
-      gnode_t gn;
-      gn.id = ndl_id;
-      size_t t = loc->nl->size();
-      for (nodedef_list_t::iterator it=loc->nl->begin();
-           it != loc->nl->end();
-           ++it)
-      {
-        if (show_nids_only)
-        {
-          gn.text.cat_sprnt("%d", it->nid);
-          if (--t > 0)
-            gn.text.append(", ");
-        }
-        else
-        {
-          qbasic_block_t &block = fc->blocks[it->nid];
-          qstring s;
-          get_disasm_text(
-            block.startEA, 
-            block.endEA, 
-            &s);
-          gn.text.append(s);
-        }
-      }
-
-      // Cache the node data
-      (*node_map)[ndl_id] = gn;
-    }
-    else
-    {
-      // Grab the ndl id
-      ndl_id = it->second;
-    }
-
-    return ndl_id;
-  }
-
-  /**
-  * @brief 
-  */
-  void build(
-    qflow_chart_t &fc,
-    groupman_t *gm,
-    gnodemap_t &node_map,
-    mutable_graph_t *mg)
-  {
-    // Take a reference to the local variables so they are used
-    // in the other helper functions
-    this->gm = gm;
-    this->node_map = &node_map;
-    this->fc = &fc;
-
-    // Compute the total size of nodes needed for the combined graph
-    // The size is the total count of node def lists in each group def
-    size_t node_count = 0;
-    for (groupdef_listp_t::iterator it=gm->get_groups()->begin();
-         it != gm->get_groups()->end();
-         ++it)
-    {
-      groupdef_t &gd = **it;
-      node_count += gd.nodegroups.size();
-    }
-
-    // Resize the graph
-    mg->resize(node_count);
-
-    // Build the combined graph
-    int snodes_count = fc.size();
-    for (int n=0; n < snodes_count; n++)
-    {
-      // Figure out the combined node ID
-      int ndl_id = get_ndlid(n);
-
-      // Build the edges
-      for (int isucc=0, succ_sz=fc.nsucc(n); isucc < succ_sz; isucc++)
-      {
-        // Get the successor node
-        int nsucc = fc.succ(n, isucc);
-
-        // This node belongs to the same NDL?
-        int succ_ndlid = get_ndlid(nsucc);
-        if (succ_ndlid == ndl_id)
-        {
-          // Do nothing, consider as one node
-          continue;
-        }
-        // Add an edge
-        mg->add_edge(ndl_id, succ_ndlid, NULL);
-      }
-    }
-  }
-public:
-  /**
-  * @brief 
-  */
-  fc_to_combined_mg_t(): show_nids_only(false)
-  {
-  }
-
-  /**
-  * @brief 
-  */
-  bool operator()(
-    ea_t ea,
-    groupman_t *gm,
-    gnodemap_t &node_map,
-    mutable_graph_t *mg)
-  {
-    // Build function's flowchart
-    qflow_chart_t fc;
-    if (!get_func_flowchart(ea, fc))
-      return false;
-
-    build(fc, gm, node_map, mg);
-    return true;
-  }
-};
 
 //--------------------------------------------------------------------------
 /**
@@ -416,9 +139,11 @@ public:
         *text = get_node(node)->text.c_str();
         if (bgcolor != NULL && sel_nodes.contains(node))
           *bgcolor = 0xcaf4cb;
+
         result = 1;
         break;
       }
+      // The graph is being destroyed
       case grcode_destroyed:
       {
         gv = NULL;
@@ -451,9 +176,11 @@ static grdata_t *show_graph(
     return NULL;
   }
 
+  // Loop twice: 
+  // - (1) Create the graph and exit or close it if it was there 
+  // - (2) Re create graph due to last step
   for (int i=0;i<2;i++)
   {
-
     HWND hwnd = NULL;
     TForm *form = create_tform(STR_GS_VIEW, &hwnd);
     if (hwnd != NULL)
@@ -518,47 +245,6 @@ private:
       gd = NULL;
       ngl = NULL;
       nl = NULL;
-    }
-
-    /**
-    * @brief 
-    * @param 
-    * @return
-    */
-    void get_desc(qstring *out)
-    {
-      switch (type)
-      {
-        case chnt_gm:
-        {
-          *out = qbasename(gm->get_source_file());
-          break;
-        }
-        case chnt_gd:
-        {
-          out->sprnt(MY_TABSTR "%s (%s) NGL(%d)", 
-            gd->groupname.c_str(), 
-            gd->id.c_str(),
-            ngl->size());
-          break;
-        }
-        case chnt_nl:
-        {
-          size_t sz = nl->size();
-          out->sprnt(MY_TABSTR MY_TABSTR "NDL(%d):(", sz);
-          for (nodedef_list_t::iterator it=nl->begin();
-               it != nl->end();
-               ++it)
-          {
-            nodedef_t *nd = &*it;
-            out->cat_sprnt("%d:%a:%a", nd->nid, nd->start, nd->end);
-            if (--sz > 0)
-              out->append(", ");
-          }
-          out->append(")");
-          break;
-        }
-      }
     }
   };
 
@@ -640,6 +326,48 @@ private:
   }
 
   /**
+  * @brief Return chooser line description
+  */
+  void get_node_desc(chooser_node_t *node, qstring *out)
+  {
+    switch (node->type)
+    {
+      // Handle a group file node
+      case chnt_gm:
+      {
+        *out = qbasename(node->gm->get_source_file());
+        break;
+      }
+      // Handle group definitions
+      case chnt_gd:
+      {
+        out->sprnt(MY_TABSTR "%s (%s) NGL(%d)", 
+          node->gd->groupname.c_str(), 
+          node->gd->id.c_str(),
+          node->ngl->size());
+        break;
+      }
+      // Handle a node definition list
+      case chnt_nl:
+      {
+        size_t sz = node->nl->size();
+        out->sprnt(MY_TABSTR MY_TABSTR "NDL(%d):(", sz);
+        for (nodedef_list_t::iterator it=node->nl->begin();
+              it != node->nl->end();
+              ++it)
+        {
+          nodedef_t *nd = &*it;
+          out->cat_sprnt("%d:%a:%a", nd->nid, nd->start, nd->end);
+          if (--sz > 0)
+            out->append(", ");
+        }
+        out->append(")");
+        break;
+      }
+    } // switch
+  }
+
+  /**
   * @brief Get textual representation of a given line
   */
   void getl(uint32 n, char *const *arrptr)
@@ -659,23 +387,36 @@ private:
 
       chooser_node_t &cn = ch_nodes[n];
       qstring desc;
-      cn.get_desc(&desc);
+      get_node_desc(&cn, &desc);
       qstrncpy(arrptr[0], desc.c_str(), MAXSTR);
     }
   }
 
+  /**
+  * @brief 
+  * @param 
+  * @return
+  */
   uint32 del(uint32 n)
   {
     // nop
     return n;
   }
 
+  /**
+  * @brief 
+  * @param 
+  * @return
+  */
   void ins()
   {
     //TODO: askfolder()
     //      load the bbgroup file
   }
 
+  /**
+  * @brief Callback that handles ENTER or double clicks on a chooser node
+  */
   void enter(uint32 n)
   {
     if (!IS_SEL(n) || n > ch_nodes.size())
@@ -700,7 +441,7 @@ private:
         gr = show_graph(loc->nl->begin()->start, gm);
         if (gr != NULL)
         {
-          //TODO
+          //TODO refactor
           gr->parent_ref = &gr;
         }
         break;

@@ -1,11 +1,4 @@
-#include "groupman.h"
-#define USE_STANDARD_FILE_FUNCTIONS
-#include <fpro.h>
-#include <string>
-#include <fstream>
-#include <iostream>
-
-/*
+/*--------------------------------------------------------------------------
 History
 --------
 
@@ -16,7 +9,14 @@ History
                                 - Moved history comment block to the cpp file
 10/22/2013 - eliasb             - Added gm.get_nodes()
                                 - Change group def list type name
-*/
+--------------------------------------------------------------------------*/
+
+#include "groupman.h"
+#define USE_STANDARD_FILE_FUNCTIONS
+#include <fpro.h>
+#include <string>
+#include <fstream>
+#include <iostream>
 
 //--------------------------------------------------------------------------
 static const char STR_ID[]          = "ID";

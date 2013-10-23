@@ -3,6 +3,8 @@
   <ItemGroup>
     <ClCompile Include="plugin.cpp" />
     <ClCompile Include="groupman.cpp" />
+    <ClCompile Include="util.cpp" />
+    <ClCompile Include="algo.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\allins.hpp">
@@ -159,6 +161,8 @@
       <Filter>sdk</Filter>
     </ClInclude>
     <ClInclude Include="groupman.h" />
+    <ClInclude Include="util.h" />
+    <ClInclude Include="algo.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="sdk">
