@@ -80,8 +80,8 @@ struct groupdef_t
     return ndl;
   }
 };
-typedef qlist<groupdef_t *> pgroupdef_list_t;
-typedef std::set<groupdef_t *> pgroupdef_set_t;
+typedef qlist<groupdef_t *>    groupdef_listp_t;
+typedef std::set<groupdef_t *> groupdef_setp_t;
 
 //--------------------------------------------------------------------------
 /**
@@ -109,7 +109,7 @@ struct nodeloc_t
 */
 class groupnet_t
 {
-  typedef std::map<groupdef_t *, pgroupdef_set_t *> groupnet_map_t;
+  typedef std::map<groupdef_t *, groupdef_setp_t *> groupnet_map_t;
   groupnet_map_t network;
 public:
   /**
@@ -120,7 +120,7 @@ public:
   /**
   * @brief Return the successor group def set
   */
-  pgroupdef_set_t *get_succs(groupdef_t *key);
+  groupdef_setp_t *get_succs(groupdef_t *key);
 
   ~groupnet_t()
   {
@@ -151,7 +151,7 @@ private:
   /**
   * @brief Groups definition
   */
-  pgroupdef_list_t groups;
+  groupdef_listp_t groups;
 
   /**
   * @brief Private copy constructor
@@ -173,7 +173,7 @@ public:
   /**
   * @brief Groups definition
   */
-  pgroupdef_list_t *get_groups() { return &groups; }
+  groupdef_listp_t *get_groups() { return &groups; }
 
   nodedef_listp_t *get_nodes() { return &all_nodes; }
 

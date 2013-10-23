@@ -14,6 +14,8 @@ History
 10/22/2013 - eliasb             - Version with working selection of NodeDefLists and GroupDefs
                                 - Now the graph-view closes when the panel closes
                                 - Factored out functions from the grdata_t class
+                                - Wrote initial combine nodes algorithm
+10/23/2013 - eliasb             - Polished and completed the combine algorithm
 */
 
 #pragma warning(disable: 4018 4800)
@@ -31,6 +33,9 @@ History
 //--------------------------------------------------------------------------
 static const char STR_CANNOT_BUILD_F_FC[] = "Cannot build function flowchart!";
 static const char STR_GS_PANEL[]          = "Graph Slick - Panel";
+static const char STR_GS_VIEW[]           = "Graph Slick - View";
+static const char STR_OUTWIN_TITLE[]      = "Output window";
+static const char STR_IDAVIEWA_TITLE[]    = "IDA View-A";
 
 //--------------------------------------------------------------------------
 /**
@@ -44,7 +49,7 @@ struct gnode_t
 
 //--------------------------------------------------------------------------
 /**
-* @brief 
+* @brief Utility map class to store gnode_t types
 */
 class gnodemap_t: public std::map<int, gnode_t>
 {
@@ -96,6 +101,9 @@ static bool get_func_flowchart(
 }
 
 //--------------------------------------------------------------------------
+/**
+* @brief Get the disassembly text into a qstring
+*/
 static void get_disasm_text(
     ea_t start, 
     ea_t end, 
@@ -122,24 +130,21 @@ static void get_disasm_text(
 * @brief Build a mutable graph from a function address
 */
 static bool func_to_mgraph(
-  ea_t ea,
-  mutable_graph_t *mg,
-  gnodemap_t &node_map)
+    ea_t ea,
+    mutable_graph_t *mg,
+    gnodemap_t &node_map)
 {
   // Build function's flowchart
   qflow_chart_t qf;
   if (!get_func_flowchart(ea, qf))
-  {
-    msg("%s\n", STR_CANNOT_BUILD_F_FC);
     return false;
-  }
 
   // Resize the graph
-  size_t nodes_count = qf.size();
+  int nodes_count = qf.size();
   mg->resize(nodes_count);
 
   // Build the node cache and edges
-  for (size_t n=0; n < nodes_count; n++)
+  for (int n=0; n < nodes_count; n++)
   {
     qbasic_block_t &block = qf.blocks[n];
     gnode_t *nc = node_map.add(n);
@@ -149,7 +154,7 @@ static bool func_to_mgraph(
     get_disasm_text(block.startEA, block.endEA, &nc->text);
 
     // Build edges
-    for (size_t isucc=0, succ_sz=qf.nsucc(n); isucc < succ_sz; isucc++)
+    for (int isucc=0, succ_sz=qf.nsucc(n); isucc < succ_sz; isucc++)
     {
       int nsucc = qf.succ(n, isucc);
       mg->add_edge(n, nsucc, NULL);
@@ -159,13 +164,157 @@ static bool func_to_mgraph(
 }
 
 //--------------------------------------------------------------------------
-static void fc_to_combined_mg(
+/**
+* @brief Creates a mutable graph that have the combined nodes per the groupmanager
+*        A class was used to simulate nested functions needed by the combine algo
+*/
+class fc_to_combined_mg_t
+{
+  // Create a mapping between single node ids and the nodedef list they belong to
+  typedef std::map<nodedef_list_t *, int> ndl2id_t;
+  ndl2id_t ndl2id;
+
+  gnodemap_t *node_map;
+  groupman_t *gm;
+  qflow_chart_t *fc;
+  bool show_nids_only;
+
+  /**
+  * @brief Create and return a groupped node ID
+  */
+  int get_ndlid(int n)
+  {
+    int ndl_id;
+
+    // Find how this single node is defined in the group manager
+    nodeloc_t *loc = gm->find_nodeid_loc(n);
+    
+    // Does this node have a group yet? (ndl)
+    ndl2id_t::iterator it = ndl2id.find(loc->nl);
+    if (it == ndl2id.end())
+    {
+      // Assign an auto-incr id
+      ndl_id = ndl2id.size();  
+      ndl2id[loc->nl] = ndl_id;
+
+      // Initial text for this ndl is the current single node id
+      gnode_t gn;
+      gn.id = ndl_id;
+      size_t t = loc->nl->size();
+      for (nodedef_list_t::iterator it=loc->nl->begin();
+           it != loc->nl->end();
+           ++it)
+      {
+        if (show_nids_only)
+        {
+          gn.text.cat_sprnt("%d", it->nid);
+          if (--t > 0)
+            gn.text.append(", ");
+        }
+        else
+        {
+          qbasic_block_t &block = fc->blocks[it->nid];
+          qstring s;
+          get_disasm_text(
+            block.startEA, 
+            block.endEA, 
+            &s);
+          gn.text.append(s);
+        }
+      }
+
+      // Cache the node data
+      (*node_map)[ndl_id] = gn;
+    }
+    else
+    {
+      // Grab the ndl id
+      ndl_id = it->second;
+    }
+
+    return ndl_id;
+  }
+
+  /**
+  * @brief 
+  */
+  void build(
     qflow_chart_t &fc,
     groupman_t *gm,
+    gnodemap_t &node_map,
     mutable_graph_t *mg)
-{
+  {
+    // Take a reference to the local variables so they are used
+    // in the other helper functions
+    this->gm = gm;
+    this->node_map = &node_map;
+    this->fc = &fc;
 
-}
+    // Compute the total size of nodes needed for the combined graph
+    // The size is the total count of node def lists in each group def
+    size_t node_count = 0;
+    for (groupdef_listp_t::iterator it=gm->get_groups()->begin();
+         it != gm->get_groups()->end();
+         ++it)
+    {
+      groupdef_t &gd = **it;
+      node_count += gd.nodegroups.size();
+    }
+
+    // Resize the graph
+    mg->resize(node_count);
+
+    // Build the combined graph
+    int snodes_count = fc.size();
+    for (int n=0; n < snodes_count; n++)
+    {
+      // Figure out the combined node ID
+      int ndl_id = get_ndlid(n);
+
+      // Build the edges
+      for (int isucc=0, succ_sz=fc.nsucc(n); isucc < succ_sz; isucc++)
+      {
+        // Get the successor node
+        int nsucc = fc.succ(n, isucc);
+
+        // This node belongs to the same NDL?
+        int succ_ndlid = get_ndlid(nsucc);
+        if (succ_ndlid == ndl_id)
+        {
+          // Do nothing, consider as one node
+          continue;
+        }
+        // Add an edge
+        mg->add_edge(ndl_id, succ_ndlid, NULL);
+      }
+    }
+  }
+public:
+  /**
+  * @brief 
+  */
+  fc_to_combined_mg_t(): show_nids_only(false)
+  {
+  }
+
+  /**
+  * @brief 
+  */
+  bool operator()(
+    ea_t ea,
+    groupman_t *gm,
+    gnodemap_t &node_map,
+    mutable_graph_t *mg)
+  {
+    // Build function's flowchart
+    qflow_chart_t fc;
+    if (!get_func_flowchart(ea, fc))
+      return false;
+
+    build(fc, gm, node_map, mg);
+    return true;
+  }
+};
 
 //--------------------------------------------------------------------------
 /**
@@ -178,12 +327,12 @@ private:
   ea_t ea;
 
 public:
-  int cur_node;
-  const char *err;
-  graph_viewer_t *gv;
-  intseq_t sel_nodes;
-  TForm *form;
-  grdata_t **parent_ref;
+  int             cur_node;
+  graph_viewer_t  *gv;
+  intseq_t        sel_nodes;
+  TForm           *form;
+  grdata_t        **parent_ref;
+  groupman_t      *gm;
 
   enum refresh_modes_e
   {
@@ -199,7 +348,6 @@ public:
   grdata_t(ea_t ea)
   {
     cur_node = 0;
-    err = NULL;
     gv = NULL;
     this->ea = ea;
     form = NULL;
@@ -216,9 +364,7 @@ public:
   }
 
   /**
-  * @brief 
-  * @param 
-  * @return
+  * @brief Static graph callback
   */
   static int idaapi _gr_callback(
       void *ud, 
@@ -229,8 +375,6 @@ public:
 
   /**
   * @brief 
-  * @param 
-  * @return
   */
   int idaapi gr_callback(
     int code,
@@ -253,7 +397,9 @@ public:
         mutable_graph_t *mg = va_arg(va, mutable_graph_t *);
         if (node_map.empty() || refresh_mode == rfm_rebuild)
         {
-          func_to_mgraph(this->ea, mg, node_map);
+          //func_to_mgraph(this->ea, mg, node_map);
+          //;!;!
+          fc_to_combined_mg_t()(this->ea, gm, node_map, mg);
         }
         result = 1;
         break;
@@ -290,7 +436,9 @@ public:
 };
 
 //--------------------------------------------------------------------------
-static grdata_t *show_graph(ea_t ea = BADADDR)
+static grdata_t *show_graph(
+    ea_t ea = BADADDR, 
+    groupman_t *gm = NULL)
 {
   if (ea == BADADDR)
     ea = get_screen_ea();
@@ -305,18 +453,18 @@ static grdata_t *show_graph(ea_t ea = BADADDR)
 
   for (int i=0;i<2;i++)
   {
-    qstring title;
 
     HWND hwnd = NULL;
-    title.sprnt("Combined Graph of %a()", f->startEA);
-    TForm *form = create_tform(title.c_str(), &hwnd);
+    TForm *form = create_tform(STR_GS_VIEW, &hwnd);
     if (hwnd != NULL)
     {
       // get a unique graph id
       netnode id;
-      title.insert(0, "$ ");
+      qstring title;
+      title.sprnt("$ Combined Graph of %a()", f->startEA);
       id.create(title.c_str());
       grdata_t *ctx = new grdata_t(f->startEA);
+      ctx->gm = gm;
       graph_viewer_t *gv = create_graph_viewer(
         form,  
         id, 
@@ -541,6 +689,7 @@ private:
       {
         //TODO: remove me or really handle multiple files
         //TODO: this method can simply switch the working graph data ...so it can still work w/ multiple bbgroup files
+        break;
         nodeloc_t *loc = chn.gm->find_nodeid_loc(0);
         if (loc == NULL || loc->nl->empty())
         {
@@ -548,9 +697,12 @@ private:
           return;
         }
 
-        gr = show_graph(loc->nl->begin()->start);
+        gr = show_graph(loc->nl->begin()->start, gm);
         if (gr != NULL)
+        {
+          //TODO
           gr->parent_ref = &gr;
+        }
         break;
       }
       // Handle double click
@@ -624,9 +776,12 @@ private:
 
     // Show the graph
     nodedef_listp_t *nodes = gm->get_nodes();
-    gr = show_graph((*nodes->begin())->start);
+    gr = show_graph((*nodes->begin())->start, gm);
     if (gr != NULL)
+    {
+      //TODO:
       gr->parent_ref = &gr;
+    }
   }
 
 public:
@@ -687,7 +842,7 @@ public:
     node->type = chnt_gm;
     node->gm = gm;
 
-    for (pgroupdef_list_t::iterator it=gm->get_groups()->begin();
+    for (groupdef_listp_t::iterator it=gm->get_groups()->begin();
          it != gm->get_groups()->end();
          ++it)
     {
@@ -723,7 +878,8 @@ public:
   {
     if (singleton == NULL)
       singleton = new mychooser_t();
-    choose3(&singleton->chi); 
+    choose3(&singleton->chi);
+    set_dock_pos(STR_GS_PANEL, STR_OUTWIN_TITLE, DP_RIGHT);
   }
 
   ~mychooser_t()

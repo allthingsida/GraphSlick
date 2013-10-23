@@ -15,6 +15,7 @@ History
                                 - Change some type names
                                 - Moved history comment block to the cpp file
 10/22/2013 - eliasb             - Added gm.get_nodes()
+                                - Change group def list type name
 */
 
 //--------------------------------------------------------------------------
@@ -42,14 +43,14 @@ void groupnet_t::clear()
 }
 
 //--------------------------------------------------------------------------
-pgroupdef_set_t * groupnet_t::get_succs(groupdef_t *key)
+groupdef_setp_t * groupnet_t::get_succs(groupdef_t *key)
 {
   groupnet_map_t::iterator it = network.find(key);
   if (it != network.end())
     return it->second;
 
   // Create a new groupdef set
-  pgroupdef_set_t *succs = new pgroupdef_set_t();
+  groupdef_setp_t *succs = new groupdef_setp_t();
 
   // Insert it into the network by key
   network[key] = succs;
@@ -121,7 +122,7 @@ void groupman_t::initialize_lookups()
   all_nodes.clear();
 
   // Build new cache
-  for (pgroupdef_list_t::iterator it=groups.begin();
+  for (groupdef_listp_t::iterator it=groups.begin();
        it != groups.end();
        ++it)
   {
@@ -172,7 +173,7 @@ groupman_t::~groupman_t()
 //--------------------------------------------------------------------------
 void groupman_t::clear()
 {
-  for (pgroupdef_list_t::iterator it=groups.begin(); 
+  for (groupdef_listp_t::iterator it=groups.begin(); 
        it != groups.end();
        ++it)
   {
@@ -196,7 +197,7 @@ bool groupman_t::emit(const char *filename)
   if (fp == NULL)
     return false;
 
-  for (pgroupdef_list_t::iterator it=groups.begin();
+  for (groupdef_listp_t::iterator it=groups.begin();
     it != groups.end();
     ++it)
   {
