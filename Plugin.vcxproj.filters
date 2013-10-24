@@ -5,6 +5,7 @@
     <ClCompile Include="groupman.cpp" />
     <ClCompile Include="util.cpp" />
     <ClCompile Include="algo.cpp" />
+    <ClCompile Include="colorgen.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\allins.hpp">
@@ -163,6 +164,7 @@
     <ClInclude Include="groupman.h" />
     <ClInclude Include="util.h" />
     <ClInclude Include="algo.hpp" />
+    <ClInclude Include="colorgen.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="sdk">

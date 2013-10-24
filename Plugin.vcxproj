@@ -278,6 +278,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="algo.cpp" />
+    <ClCompile Include="colorgen.cpp" />
     <ClCompile Include="groupman.cpp" />
     <ClCompile Include="plugin.cpp" />
     <ClCompile Include="util.cpp" />
@@ -335,6 +336,7 @@
     <ClInclude Include="..\..\include\ua.hpp" />
     <ClInclude Include="..\..\include\xref.hpp" />
     <ClInclude Include="algo.hpp" />
+    <ClInclude Include="colorgen.h" />
     <ClInclude Include="groupman.h" />
     <ClInclude Include="util.h" />
   </ItemGroup>

@@ -16,6 +16,7 @@ History
                                 - Factored out functions from the grdata_t class
                                 - Wrote initial combine nodes algorithm
 10/23/2013 - eliasb             - Polished and completed the combine algorithm
+                                - Factored out many code into various modules
 */
 
 #pragma warning(disable: 4018 4800)
@@ -138,7 +139,7 @@ public:
 
         *text = get_node(node)->text.c_str();
         if (bgcolor != NULL && sel_nodes.contains(node))
-          *bgcolor = 0xcaf4cb;
+          *bgcolor = 0xE6A302;//0xcaf4cb;
 
         result = 1;
         break;
@@ -216,39 +217,42 @@ static grdata_t *show_graph(
 }
 
 //--------------------------------------------------------------------------
+enum chooser_node_type_t
+{
+  chnt_gm  = 0,
+  chnt_gd  = 1,
+  chnt_nl  = 3,
+};
+
+//--------------------------------------------------------------------------
+class chooser_node_t
+{
+public:
+  chooser_node_type_t type;
+  groupman_t *gm;
+  groupdef_t *gd;
+  nodegroup_listp_t *ngl;
+  nodedef_list_t *nl;
+
+  chooser_node_t()
+  {
+    gm = NULL;
+    gd = NULL;
+    ngl = NULL;
+    nl = NULL;
+  }
+};
+
+typedef qvector<chooser_node_t> chooser_node_vec_t;
+
+//--------------------------------------------------------------------------
 /**
-* @brief 
+* @brief GraphSlick chooser class
 */
-class mychooser_t
+class gschooser_t
 {
 private:
-  static mychooser_t *singleton;
-  enum chooser_node_type_t
-  {
-    chnt_gm  = 0,
-    chnt_gd  = 1,
-    chnt_nl  = 3,
-  };
-
-  class chooser_node_t
-  {
-  public:
-    int type;
-    groupman_t *gm;
-    groupdef_t *gd;
-    nodegroup_listp_t *ngl;
-    nodedef_list_t *nl;
-
-    chooser_node_t()
-    {
-      gm = NULL;
-      gd = NULL;
-      ngl = NULL;
-      nl = NULL;
-    }
-  };
-
-  typedef qvector<chooser_node_t> chooser_node_vec_t;
+  static gschooser_t *singleton;
   chooser_node_vec_t ch_nodes;
 
   chooser_info_t chi;
@@ -257,47 +261,47 @@ private:
 
   static uint32 idaapi s_sizer(void *obj)
   {
-    return ((mychooser_t *)obj)->sizer();
+    return ((gschooser_t *)obj)->sizer();
   }
 
   static void idaapi s_getl(void *obj, uint32 n, char *const *arrptr)
   {
-    ((mychooser_t *)obj)->getl(n, arrptr);
+    ((gschooser_t *)obj)->getl(n, arrptr);
   }
 
   static uint32 idaapi s_del(void *obj, uint32 n)
   {
-    return ((mychooser_t *)obj)->del(n);
+    return ((gschooser_t *)obj)->del(n);
   }
 
   static void idaapi s_ins(void *obj)
   {
-    ((mychooser_t *)obj)->ins();
+    ((gschooser_t *)obj)->ins();
   }
 
   static void idaapi s_enter(void *obj, uint32 n)
   {
-    ((mychooser_t *)obj)->enter(n);
+    ((gschooser_t *)obj)->enter(n);
   }
 
   static void idaapi s_refresh(void *obj)
   {
-    ((mychooser_t *)obj)->refresh();
+    ((gschooser_t *)obj)->refresh();
   }
 
   static void idaapi s_initializer(void *obj)
   {
-    ((mychooser_t *)obj)->initializer();
+    ((gschooser_t *)obj)->initializer();
   }
 
   static void idaapi s_destroyer(void *obj)
   {
-    ((mychooser_t *)obj)->destroyer();
+    ((gschooser_t *)obj)->destroyer();
   }
 
   static void idaapi s_select(void *obj, const intvec_t &sel)
   {
-    ((mychooser_t *)obj)->select(sel);
+    ((gschooser_t *)obj)->select(sel);
   }
 
   /**
@@ -312,8 +316,12 @@ private:
     singleton = NULL;
   }
 
+  /**
+  * @brief Handles instant node selection in the chooser
+  */
   void select(const intvec_t &sel)
   {
+    // Delegate this task to the 'enter' routine
     enter(sel[0]);
   }
 
@@ -526,7 +534,7 @@ private:
   }
 
 public:
-  mychooser_t()
+  gschooser_t()
   {
     memset(&chi, 0, sizeof(chi));
     chi.cb = sizeof(chi);
@@ -618,17 +626,17 @@ public:
   static void show()
   {
     if (singleton == NULL)
-      singleton = new mychooser_t();
+      singleton = new gschooser_t();
     choose3(&singleton->chi);
     set_dock_pos(STR_GS_PANEL, STR_OUTWIN_TITLE, DP_RIGHT);
   }
 
-  ~mychooser_t()
+  ~gschooser_t()
   {
     //NOTE: IDA will close the chooser for us and thus the destroy callback will be called
   }
 };
-mychooser_t *mychooser_t::singleton = NULL;
+gschooser_t *gschooser_t::singleton = NULL;
 
 //--------------------------------------------------------------------------
 //
@@ -640,7 +648,7 @@ mychooser_t *mychooser_t::singleton = NULL;
 //--------------------------------------------------------------------------
 void idaapi run(int /*arg*/)
 {
-  mychooser_t::show();
+  gschooser_t::show();
 }
 
 //--------------------------------------------------------------------------
