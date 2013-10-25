@@ -31,9 +31,17 @@ struct nodedef_t
 
 //--------------------------------------------------------------------------
 /**
-* @brief A list of nodes: make a group
+* @brief A list of nodes: makes a group
 */
 typedef qlist<nodedef_t> nodedef_list_t;
+typedef nodedef_list_t *pnodedef_list_t;
+
+//--------------------------------------------------------------------------
+/**
+* @brief Used to map a pNDL to an id 
+         Normally a node ID representing a group of nodes
+*/
+typedef std::map<pnodedef_list_t, int> pndl2id_t;
 
 //--------------------------------------------------------------------------
 /**
@@ -45,7 +53,7 @@ typedef qlist<nodedef_t *> nodedef_listp_t;
 /**
 * @brief A list of node groups
 */
-typedef qlist<nodedef_list_t *> nodegroup_listp_t;
+typedef qlist<pnodedef_list_t> nodegroup_listp_t;
 
 //--------------------------------------------------------------------------
 /**
@@ -73,9 +81,9 @@ struct groupdef_t
   * @brief Add a new node group
   * @return Node group
   */
-  inline nodedef_list_t *add_node_group()
+  inline pnodedef_list_t add_node_group()
   {
-    nodedef_list_t *ndl = new nodedef_list_t();
+    pnodedef_list_t ndl = new nodedef_list_t();
     nodegroups.push_back(ndl);
     return ndl;
   }
@@ -90,14 +98,14 @@ typedef std::set<groupdef_t *> groupdef_setp_t;
 struct nodeloc_t
 {
   groupdef_t *gd;
-  nodedef_list_t *nl;
+  pnodedef_list_t nl;
   nodedef_t *nd;
 
   nodeloc_t(): gd(NULL), nl(NULL), nd(NULL)
   {
   }
   nodeloc_t(groupdef_t *gd, 
-            nodedef_list_t *nl,
+            pnodedef_list_t nl,
             nodedef_t *nd): gd(gd), nl(nl), nd(nd)
   {
   }

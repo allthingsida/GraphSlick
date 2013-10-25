@@ -9,6 +9,7 @@ History
                                 - Moved history comment block to the cpp file
 10/22/2013 - eliasb             - Added gm.get_nodes()
                                 - Change group def list type name
+10/25/2013 - eliasb             - typedef nodedef_list_t * as pnodedef_list_t
 --------------------------------------------------------------------------*/
 
 #include "groupman.h"
@@ -35,15 +36,15 @@ static const char STR_GROUP_NAME[]  = "GROUPNAME";
 void groupnet_t::clear()
 {
   for (groupnet_map_t::iterator it=network.begin();
-    it != network.end();
-    ++it)
+       it != network.end();
+       ++it)
   {
     delete it->second;
   }
 }
 
 //--------------------------------------------------------------------------
-groupdef_setp_t * groupnet_t::get_succs(groupdef_t *key)
+groupdef_setp_t *groupnet_t::get_succs(groupdef_t *key)
 {
   groupnet_map_t::iterator it = network.find(key);
   if (it != network.end())
@@ -93,7 +94,7 @@ void groupman_t::parse_nodeset(groupdef_t *g, char *str)
     str = p_group_end + 1;
 
     // Add a new node group
-    nodedef_list_t *ng = g->add_node_group();
+    pnodedef_list_t ng = g->add_node_group();
 
     for (/*init*/ char *saved_ptr, 
                   *p = p_group_start, 
@@ -133,7 +134,7 @@ void groupman_t::initialize_lookups()
          ++it)
     {
       // Walk each node list
-      nodedef_list_t *nl = *it;
+      pnodedef_list_t nl = *it;
       for (nodedef_list_t::iterator it=nl->begin();
            it != nl->end();
            ++it)
@@ -226,7 +227,7 @@ bool groupman_t::emit(const char *filename)
       nodegroup_listp_t &ngl = gd.nodegroups;
       for (nodegroup_listp_t::iterator it = ngl.begin(); it != ngl.end(); ++it)
       {
-        nodedef_list_t *nl = *it;
+        pnodedef_list_t nl = *it;
 
         qfprintf(fp, "(");
         size_t c = nl->size();

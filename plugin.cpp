@@ -19,14 +19,13 @@ History
                                 - Factored out many code into various modules
 10/24/2013 - eliasb             - Added proper coloring on selection (via colorgen class)
                                 - Factored out many code into various modules
-								- Fixed crash on re-opening the plugin chooser
+                 								- Fixed crash on re-opening the plugin chooser
 10/25/2013 - eliasb             - Refactored the code further
-								- Renamed from grdata_t to a full graphview class (gsgraphview_t)
+								                - Renamed from grdata_t to a full graphview class (gsgraphview_t)
                                 - Devised the graph context menu system
-								- Added clear/toggle selection mode
-								- Added graph view mode functionality
-								- Dock the gsgraphview next to IDA-View
-								
+								                - Added clear/toggle selection mode
+								                - Added graph view mode functionality
+								                - Dock the gsgraphview next to IDA-View
 */
 
 #pragma warning(disable: 4018 4800)
@@ -80,6 +79,7 @@ private:
   static idmenucbtx_t menu_ids;
 
   gnodemap_t node_map;
+  pndl2id_t ndl2id;
   ea_t func_ea;
   gvrefresh_modes_e refresh_mode, current_graph_mode;
 
@@ -210,18 +210,18 @@ private:
       //
       case grcode_creating_group:
       {
-        mutable_graph_t *mg = va_arg(va, mutable_graph_t *);
-        intset_t *nodes = va_arg(va, intset_t *);
+        //mutable_graph_t *mg = va_arg(va, mutable_graph_t *);
+        //intset_t *nodes = va_arg(va, intset_t *);
 
-        msg("grcode_creating_group(%p):", mg);
-        for (intset_t::iterator it=nodes->begin();
-             it != nodes->end();
-             ++it)
-        {
-          msg("%d,", *it);
-        }
-        msg("\n");
-        result = 1;
+        //msg("grcode_creating_group(%p):", mg);
+        //for (intset_t::iterator it=nodes->begin();
+        //     it != nodes->end();
+        //     ++it)
+        //{
+        //  msg("%d,", *it);
+        //}
+        //msg("\n");
+        //result = 1;
         // out: 0-ok, 1-forbid group creation
         break;
       }
@@ -245,7 +245,7 @@ private:
         // in: mutable_graph_t *g
         mutable_graph_t *mg = va_arg(va, mutable_graph_t *);
         // out: must return 0
-        msg("grcode_changed_graph: %p\n", mg);
+        //msg("grcode_changed_graph: %p\n", mg);
         break;
       }
 
@@ -257,18 +257,19 @@ private:
         mutable_graph_t *mg = va_arg(va, mutable_graph_t *);
         if (node_map.empty() || refresh_mode != gvrfm_soft)
         {
-		  // Clear previous graph node data
+          // Clear previous graph node data
           mg->clear();
           node_map.clear();
+          ndl2id.clear();
 		  
-		  // Remember the current graph mode
+    		  // Remember the current graph mode
           current_graph_mode = refresh_mode;
 		  
-		  // Switch to the desired mode
+		      // Switch to the desired mode
           if (refresh_mode == gvrfm_single_mode)
             func_to_mgraph(func_ea, mg, node_map);
           else if (refresh_mode == gvrfm_combined_mode)
-            fc_to_combined_mg(func_ea, gm, node_map, mg);
+            fc_to_combined_mg(func_ea, gm, node_map, ndl2id, mg);
         }
         result = 1;
         break;
@@ -522,7 +523,7 @@ public:
   groupman_t *gm;
   groupdef_t *gd;
   nodegroup_listp_t *ngl;
-  nodedef_list_t *nl;
+  pnodedef_list_t nl;
 
   gschooser_node_t()
   {
@@ -760,7 +761,7 @@ private:
              && !chn.gd->nodegroups.empty() )
     {
       nodegroup_listp_t *ng = &chn.gd->nodegroups;
-      nodedef_list_t *ndl0 = &(*(*ng->begin()));
+      pnodedef_list_t ndl0 = &(*(*ng->begin()));
       if (ndl0->empty())
         return;
       nid = ndl0->begin()->nid;
@@ -803,7 +804,7 @@ private:
           {
             // Use a new color variant for each NDL
             clr = get_color_anyway(cg, cv);
-            nodedef_list_t *nl = *it;
+            pnodedef_list_t nl = *it;
             for (nodedef_list_t::iterator it = nl->begin();
               it != nl->end();
               ++it)
@@ -841,12 +842,12 @@ private:
           // Use one color for all the different group defs
           cg.get_colorvar(cv);
           for (nodegroup_listp_t::iterator it=chn.ngl->begin();
-                  it != chn.ngl->end();
-                  ++it)
+               it != chn.ngl->end();
+               ++it)
           {
             // Use a new color variant for each NDL
             clr = get_color_anyway(cg, cv);
-            nodedef_list_t *nl = *it;
+            pnodedef_list_t nl = *it;
             for (nodedef_list_t::iterator it = nl->begin();
                  it != nl->end();
                  ++it)
@@ -1005,11 +1006,11 @@ public:
            it != ngl.end();
            ++it)
       {
-        nodedef_list_t *nl = *it;
+        pnodedef_list_t nl = *it;
         // Add the third-level node = nodedef
         node = &ch_nodes.push_back();
         node->type = chnt_nl;
-        node->nl = nl;
+        node->nl  = nl;
         node->ngl = &ngl;
         node->gm  = gm;
         node->gd  = &gd;

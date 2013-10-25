@@ -14,6 +14,7 @@ History
 
 10/23/2013 - eliasb             - First version, it comes from refactored code from the plugin module
 10/24/2013 - eliasb             - Renamed class to a function like name and dropped the () operator
+10/25/2013 - eliasb             - Return the ndl2id map to the caller
 --------------------------------------------------------------------------*/
 
 
@@ -34,8 +35,7 @@ History
 class fc_to_combined_mg
 {
   // Create a mapping between single node ids and the nodedef list they belong to
-  typedef std::map<nodedef_list_t *, int> ndl2id_t;
-  ndl2id_t ndl2id;
+  pndl2id_t *ndl2id;
 
   gnodemap_t *node_map;
   groupman_t *gm;
@@ -53,12 +53,12 @@ class fc_to_combined_mg
     nodeloc_t *loc = gm->find_nodeid_loc(n);
     
     // Does this node have a group yet? (ndl)
-    ndl2id_t::iterator it = ndl2id.find(loc->nl);
-    if (it == ndl2id.end())
+    pndl2id_t::iterator it = ndl2id->find(loc->nl);
+    if (it == ndl2id->end())
     {
       // Assign an auto-incr id
-      ndl_id = ndl2id.size();  
-      ndl2id[loc->nl] = ndl_id;
+      ndl_id = ndl2id->size();  
+      (*ndl2id)[loc->nl] = ndl_id;
 
       // Initial text for this ndl is the current single node id
       gnode_t gn;
@@ -105,6 +105,7 @@ class fc_to_combined_mg
     qflow_chart_t &fc,
     groupman_t *gm,
     gnodemap_t &node_map,
+	pndl2id_t &ndl2id,
     mutable_graph_t *mg)
   {
     // Take a reference to the local variables so they are used
@@ -112,6 +113,7 @@ class fc_to_combined_mg
     this->gm = gm;
     this->node_map = &node_map;
     this->fc = &fc;
+	this->ndl2id = &ndl2id;
 
     // Compute the total size of nodes needed for the combined graph
     // The size is the total count of node def lists in each group def
@@ -135,7 +137,9 @@ class fc_to_combined_mg
       int ndl_id = get_ndlid(n);
 
       // Build the edges
-      for (int isucc=0, succ_sz=fc.nsucc(n); isucc < succ_sz; isucc++)
+      for (int isucc=0, succ_sz=fc.nsucc(n); 
+           isucc < succ_sz; 
+           isucc++)
       {
         // Get the successor node
         int nsucc = fc.succ(n, isucc);
@@ -160,6 +164,7 @@ public:
       ea_t ea,
       groupman_t *gm,
       gnodemap_t &node_map,
+      pndl2id_t &ndl2id,
       mutable_graph_t *mg): show_nids_only(false)
   {
     // Build function's flowchart
@@ -167,7 +172,7 @@ public:
     if (!get_func_flowchart(ea, fc))
       return;
 
-    build(fc, gm, node_map, mg);
+    build(fc, gm, node_map, ndl2id, mg);
   }
 };
 
