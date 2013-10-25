@@ -17,6 +17,9 @@ History
                                 - Wrote initial combine nodes algorithm
 10/23/2013 - eliasb             - Polished and completed the combine algorithm
                                 - Factored out many code into various modules
+10/24/2013 - eliasb             - Added proper coloring on selection (via colorgen class)
+                                - Factored out many code into various modules
+								- Fixed crash on re-opening the plugin chooser
 */
 
 #pragma warning(disable: 4018 4800)
@@ -29,6 +32,7 @@ History
 #include "groupman.h"
 #include "util.h"
 #include "algo.hpp"
+#include "colorgen.h"
 
 //--------------------------------------------------------------------------
 #define MY_TABSTR "    "
@@ -39,6 +43,9 @@ static const char STR_GS_PANEL[]          = "Graph Slick - Panel";
 static const char STR_GS_VIEW[]           = "Graph Slick - View";
 static const char STR_OUTWIN_TITLE[]      = "Output window";
 static const char STR_IDAVIEWA_TITLE[]    = "IDA View-A";
+
+//--------------------------------------------------------------------------
+typedef std::map<int, bgcolor_t> ncolormap_t;
 
 //--------------------------------------------------------------------------
 /**
@@ -53,7 +60,7 @@ private:
 public:
   int             cur_node;
   graph_viewer_t  *gv;
-  intseq_t        sel_nodes;
+  ncolormap_t     sel_nodes;
   TForm           *form;
   grdata_t        **parent_ref;
   groupman_t      *gm;
@@ -121,9 +128,9 @@ public:
         mutable_graph_t *mg = va_arg(va, mutable_graph_t *);
         if (node_map.empty() || refresh_mode == rfm_rebuild)
         {
-          //func_to_mgraph(this->ea, mg, node_map);
+          func_to_mgraph(this->ea, mg, node_map);
           //;!;!
-          fc_to_combined_mg_t()(this->ea, gm, node_map, mg);
+          //fc_to_combined_mg_t()(this->ea, gm, node_map, mg);
         }
         result = 1;
         break;
@@ -138,8 +145,9 @@ public:
         bgcolor_t *bgcolor = va_arg(va, bgcolor_t *);
 
         *text = get_node(node)->text.c_str();
-        if (bgcolor != NULL && sel_nodes.contains(node))
-          *bgcolor = 0xE6A302;//0xcaf4cb;
+        ncolormap_t::iterator psel = sel_nodes.find(node);
+        if (bgcolor != NULL && psel != sel_nodes.end())
+          *bgcolor = psel->second;
 
         result = 1;
         break;
@@ -422,6 +430,36 @@ private:
     //      load the bbgroup file
   }
 
+#define DECL_CG \
+  colorgen_t cg; \
+  cg.L_INT = -15; \
+  colorvargen_t cv; \
+  bgcolor_t clr
+
+  /**
+  * @brief 
+  */
+  unsigned int get_color_anyway(colorgen_t &cg, colorvargen_t &cv)
+  {
+    bgcolor_t clr;
+
+    while (true)
+    {
+      // Get a color variant
+      clr = cv.get_color();
+      if (clr != 0)
+        break;
+      // No variant? Pick a new color
+      if (!cg.get_colorvar(cv))
+      {
+        // No more colors, just rewind
+        cg.rewind();
+        cg.get_colorvar(cv);
+      }
+    }
+    return clr;
+  }
+
   /**
   * @brief Callback that handles ENTER or double clicks on a chooser node
   */
@@ -436,21 +474,33 @@ private:
     {
       case chnt_gm:
       {
-        //TODO: remove me or really handle multiple files
-        //TODO: this method can simply switch the working graph data ...so it can still work w/ multiple bbgroup files
-        break;
-        nodeloc_t *loc = chn.gm->find_nodeid_loc(0);
-        if (loc == NULL || loc->nl->empty())
+        DECL_CG;
+ 
+        // Walk all groups
+        groupdef_listp_t *groups = gm->get_groups();
+        for (groupdef_listp_t::iterator it=groups->begin();
+             it != groups->end();
+             ++it)
         {
-          msg("Could not show graph from this selection!\n");
-          return;
-        }
+          // Get the group definition -> node groups in this def
+          groupdef_t *gd = *it;
 
-        gr = show_graph(loc->nl->begin()->start, gm);
-        if (gr != NULL)
-        {
-          //TODO refactor
-          gr->parent_ref = &gr;
+          // Assign a new color variant for each groupdef
+          cg.get_colorvar(cv);
+          for (nodegroup_listp_t::iterator it=gd->nodegroups.begin();
+               it != gd->nodegroups.end();
+               ++it)
+          {
+            // Use a new color variant for each NDL
+            clr = get_color_anyway(cg, cv);
+            nodedef_list_t *nl = *it;
+            for (nodedef_list_t::iterator it = nl->begin();
+              it != nl->end();
+              ++it)
+            {
+              gr->sel_nodes[it->nid] = clr;
+            }
+          }
         }
         break;
       }
@@ -461,29 +511,41 @@ private:
         if (gr == NULL || gr->gv == NULL)
           break;
 
+        DECL_CG;
+
         gr->sel_nodes.clear();
         if (chn.type == chnt_nl)
         {
+          cg.get_colorvar(cv);
+          clr = get_color_anyway(cg, cv);
           for (nodedef_list_t::iterator it = chn.nl->begin();
                it != chn.nl->end();
                ++it)
           {
-            gr->sel_nodes.add(it->nid);
+            gr->sel_nodes[it->nid] = clr;
           }
         }
-        else for (nodegroup_listp_t::iterator it=chn.ngl->begin();
+        // chnt_gd
+        else
+        {
+          // Use one color for all the different group defs
+          cg.get_colorvar(cv);
+          for (nodegroup_listp_t::iterator it=chn.ngl->begin();
                   it != chn.ngl->end();
                   ++it)
-        {
-          nodedef_list_t *nl = *it;
-          for (nodedef_list_t::iterator it = nl->begin();
-               it != nl->end();
-               ++it)
           {
-            gr->sel_nodes.add(it->nid);
+            // Use a new color variant for each NDL
+            clr = get_color_anyway(cg, cv);
+            nodedef_list_t *nl = *it;
+            for (nodedef_list_t::iterator it = nl->begin();
+                 it != nl->end();
+                 ++it)
+            {
+              gr->sel_nodes[it->nid] = clr;
+            }
           }
         }
-
+        // Soft refresh
         refresh_viewer(gr->gv);
         break;
       }
@@ -495,7 +557,7 @@ private:
   */
   void close_graph()
   {
-    if (gr == NULL && gr->form != NULL)
+    if (gr == NULL || gr->form == NULL)
       return;
     close_tform(gr->form, 0);
   }
@@ -520,7 +582,10 @@ private:
 
   void idaapi initializer()
   {
-    if (!load_file("P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\f1.bbgroup"))
+    const char *fn;
+    fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\f1.bbgroup";
+    //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\main.bbgroup";
+    if (!load_file(fn))
       return;
 
     // Show the graph
@@ -686,4 +751,3 @@ plugin_t PLUGIN =
   "GraphSlick",         // the preferred short name of the plugin
   "Ctrl-4"              // the preferred hotkey to run the plugin
 };
-//P:\projects\experiments\bbgroup\sample_c\bin\v1\x86\main.bbgroup

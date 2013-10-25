@@ -110,7 +110,7 @@ unsigned int colorvargen_t::get_color()
 }
 
 //--------------------------------------------------------------------------
-bool colorgen_t::get_colorvar(colorvargen_t &cg)
+bool colorgen_t::get_colorvar(colorvargen_t &cv)
 {
   unsigned int old_h = h, old_s = s;
 
@@ -138,12 +138,12 @@ bool colorgen_t::get_colorvar(colorvargen_t &cg)
     h += H_INT;
   }
 
-  cg.bRealRgb = bRealRgb;
-  cg.h        = old_h;
-  cg.s        = old_s;
-  cg.l        = L_START;
-  cg.L_END    = L_END;
-  cg.L_INT    = L_INT;
+  cv.bRealRgb = bRealRgb;
+  cv.h        = old_h;
+  cv.s        = old_s;
+  cv.l        = L_START;
+  cv.L_END    = L_END;
+  cv.L_INT    = L_INT;
 
   return true;
 }
@@ -158,6 +158,13 @@ colorgen_t::colorgen_t(
           H_START(h_start), H_END(h_end), H_INT(h_int),
           S_START(s_start), S_END(s_end), S_INT(s_int),
           L_START(l_start), L_END(l_end), L_INT(l_int)
+{
+  h = H_START;
+  s = S_START;
+}
+
+//--------------------------------------------------------------------------
+void colorgen_t::rewind()
 {
   h = H_START;
   s = S_START;
