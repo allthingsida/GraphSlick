@@ -13,7 +13,7 @@ History
 --------
 
 10/23/2013 - eliasb             - First version, it comes from refactored code from the plugin module
-
+10/24/2013 - eliasb             - Renamed class to a function like name and dropped the () operator
 --------------------------------------------------------------------------*/
 
 
@@ -31,7 +31,7 @@ History
 * @brief Creates a mutable graph that have the combined nodes per the groupmanager
 *        A class was used to simulate nested functions needed by the combine algo
 */
-class fc_to_combined_mg_t
+class fc_to_combined_mg
 {
   // Create a mapping between single node ids and the nodedef list they belong to
   typedef std::map<nodedef_list_t *, int> ndl2id_t;
@@ -154,28 +154,20 @@ class fc_to_combined_mg_t
   }
 public:
   /**
-  * @brief 
-  */
-  fc_to_combined_mg_t(): show_nids_only(false)
-  {
-  }
-
-  /**
   * @brief Operator to call the class as a function
   */
-  bool operator()(
+  fc_to_combined_mg(
       ea_t ea,
       groupman_t *gm,
       gnodemap_t &node_map,
-      mutable_graph_t *mg)
+      mutable_graph_t *mg): show_nids_only(false)
   {
     // Build function's flowchart
     qflow_chart_t fc;
     if (!get_func_flowchart(ea, fc))
-      return false;
+      return;
 
     build(fc, gm, node_map, mg);
-    return true;
   }
 };
 
