@@ -9,7 +9,9 @@ This module implements the color generator
 History
 --------
 
-10/24/2013 - eliasb             - First version
+10/24/2013 - eliasb    - First version
+10/24/2013 - eliasb    - Added Rewind() method
+10/25/2013 - eliasb    - Added get_color_anyway() method
 
 --------------------------------------------------------------------------*/
 
@@ -168,4 +170,27 @@ void colorgen_t::rewind()
 {
   h = H_START;
   s = S_START;
+}
+
+//--------------------------------------------------------------------------
+unsigned int colorgen_t::get_color_anyway(colorvargen_t &cv)
+{
+  unsigned int clr;
+
+  while (true)
+  {
+    // Get a color variant
+    clr = cv.get_color();
+    if (clr != 0)
+      break;
+
+    // No variant? Pick a new color
+    if (!get_colorvar(cv))
+    {
+      // No more colors, just rewind
+      rewind();
+      get_colorvar(cv);
+    }
+  }
+  return clr;
 }

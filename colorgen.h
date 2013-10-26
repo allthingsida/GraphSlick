@@ -5,12 +5,6 @@ GraphSlick (c) Elias Bachaalany
 Color generation module
 
 This module implements the color generator
-
-History
---------
-
-10/24/2013 - eliasb             - First version
-                                - Added Rewind() method
 --------------------------------------------------------------------------*/
 
 //--------------------------------------------------------------------------
@@ -43,5 +37,11 @@ public:
              unsigned int l_start=190, unsigned int l_end=100, unsigned int l_int=-3);
 
   bool get_colorvar(colorvargen_t &cv);
+
+  /**
+  * @brief Generates a color. Prefers first a color variant
+  */
+  unsigned int get_color_anyway(colorvargen_t &cv);
+
   void rewind();
 };
