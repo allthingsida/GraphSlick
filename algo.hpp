@@ -12,9 +12,10 @@ This module implements various algorithms used by the plugin
 History
 --------
 
-10/23/2013 - eliasb             - First version, it comes from refactored code from the plugin module
-10/24/2013 - eliasb             - Renamed class to a function like name and dropped the () operator
-10/25/2013 - eliasb             - Return the ndl2id map to the caller
+10/23/2013 - eliasb     - First version, it comes from refactored code from the plugin module
+10/24/2013 - eliasb     - Renamed class to a function like name and dropped the () operator
+10/25/2013 - eliasb     - Return the ndl2id map to the caller
+                        - added 'append_node_id' param to func_to_mgraph()
 --------------------------------------------------------------------------*/
 
 
@@ -180,6 +181,7 @@ public:
 bool func_to_mgraph(
     ea_t ea,
     mutable_graph_t *mg,
-    gnodemap_t &node_map);
+    gnodemap_t &node_map,
+    bool append_node_id = false);
 
 #endif

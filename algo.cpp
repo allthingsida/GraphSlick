@@ -7,7 +7,8 @@
 bool func_to_mgraph(
     ea_t ea,
     mutable_graph_t *mg,
-    gnodemap_t &node_map)
+    gnodemap_t &node_map,
+    bool append_node_id)
 {
   // Build function's flowchart
   qflow_chart_t qf;
@@ -25,7 +26,8 @@ bool func_to_mgraph(
     gnode_t *nc = node_map.add(n);
 
     // Generate disassembly text
-    nc->text.sprnt("ID(%d)\n", n);
+    if (append_node_id)
+      nc->text.sprnt("ID(%d)\n", n);
     get_disasm_text(block.startEA, block.endEA, &nc->text);
 
     // Build edges
