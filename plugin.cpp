@@ -26,6 +26,9 @@ History
 								                - Added clear/toggle selection mode
 								                - Added graph view mode functionality
 								                - Dock the gsgraphview next to IDA-View
+                                - Factored out get_color_anyway() to the colorgen module
+                                - Proper support for node selection/coloring in single and combined mode
+                                - Change naming from chooser nodes to chooser line
 */
 
 #pragma warning(disable: 4018 4800)
@@ -93,10 +96,11 @@ private:
 
   bool in_sel_mode;
 
+  ncolormap_t     sel_nodes;
+
 public:
   int             cur_node;
   graph_viewer_t  *gv;
-  ncolormap_t     sel_nodes;
   TForm           *form;
   groupman_t      *gm;
 
@@ -144,15 +148,6 @@ private:
   }
 
   /**
-  * @brief Clear the selection
-  */
-  void clear_selection()
-  {
-    sel_nodes.clear();
-    refresh(gvrfm_soft);
-  }
-
-  /**
   * @brief Return node data
   */
   gnode_t *get_node(int nid)
@@ -191,6 +186,8 @@ private:
         if (in_sel_mode && item1 != NULL && item1->is_node)
           toggle_select_node(item1->node);
 
+        // don't ignore the click
+        result = 0;
         break;
       }
 
@@ -261,6 +258,7 @@ private:
           mg->clear();
           node_map.clear();
           ndl2id.clear();
+          sel_nodes.clear();
 		  
     		  // Remember the current graph mode
           current_graph_mode = refresh_mode;
@@ -345,11 +343,119 @@ public:
   }
 
   /**
+  * @brief Selects node definition lists
+  */
+  bool set_selected_nodes(
+      pnodedef_list_t ndl, 
+      bgcolor_t clr,
+      bool additive = true)
+  {
+    if (!additive)
+      clear_selection(true);
+
+    // Combined mode?
+    if (current_graph_mode == gvrfm_combined_mode)
+    {
+      // Rely on the ndl2id map to figure out selection
+      pndl2id_t::iterator it = ndl2id.find(ndl);
+      if (it == ndl2id.end())
+        return false;
+
+      sel_nodes[it->second] = clr;
+    }
+    // Single view mode?
+    else if (current_graph_mode == gvrfm_single_mode)
+    {
+      // Add each node in the definition to the selection
+      for (nodedef_list_t::iterator it = ndl->begin();
+           it != ndl->end();
+           ++it)
+      {
+        sel_nodes[it->nid] = clr;
+      }
+    }
+    // Unknown mode
+    else
+    {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+  * @brief Selects a nodegroup list
+  */
+  void set_selected_nodes(
+          nodegroup_listp_t *ngl, 
+          colorgen_t &cg, 
+          bool additive = true)
+  {
+    if (!additive)
+      clear_selection(true);
+
+    // Use one color for all the different group defs
+    colorvargen_t cv;
+    cg.get_colorvar(cv);
+
+    for (nodegroup_listp_t::iterator it=ngl->begin();
+         it != ngl->end();
+         ++it)
+    {
+      // Use a new color variant for each NDL
+      bgcolor_t clr = cg.get_color_anyway(cv);
+      pnodedef_list_t nl = *it;
+
+      set_selected_nodes(nl, clr, additive);
+    }
+  }
+
+  /**
+  * @brief Selects all group definitions
+  */
+  void set_selected_nodes(
+    groupdef_listp_t *groups,
+    colorgen_t &cg,
+    bool additive = true)
+  {
+    colorvargen_t cv;
+    for (groupdef_listp_t::iterator it=groups->begin();
+         it != groups->end();
+         ++it)
+    {
+      // Get the group definition -> node groups in this def
+      groupdef_t *gd = *it;
+
+      // Assign a new color variant for each groupdef
+      cg.get_colorvar(cv);
+      for (nodegroup_listp_t::iterator it=gd->nodegroups.begin();
+           it != gd->nodegroups.end();
+           ++it)
+      {
+        // Use a new color variant for each NDL
+        bgcolor_t clr = cg.get_color_anyway(cv);
+        pnodedef_list_t ndl = *it;
+        set_selected_nodes(ndl, clr, additive);
+      }
+    }
+  }
+
+
+  /**
   * @brief Set the parent ref variable
   */
   inline void set_parentref(gsgraphview_t **pr)
   {
     parent_ref = pr;
+  }
+
+  /**
+  * @brief Clear the selection
+  */
+  void clear_selection(bool dont_refresh = false)
+  {
+    sel_nodes.clear();
+    if (dont_refresh)
+      refresh(gvrfm_soft);
   }
 
   /**
@@ -415,7 +521,7 @@ public:
   }
 
   /**
-  * @brief 
+  * @brief Add a context menu to the graphview
   */
   int add_menu(
     const char *name,
@@ -446,7 +552,7 @@ public:
   }
 
   /**
-  * @brief Delete a menu item
+  * @brief Delete a context menu item
   */
   void del_menu(int menu_id)
   {
@@ -485,13 +591,18 @@ public:
     viewer_fit_window(gv);
     viewer_center_on(gv, 0);
 
+    // Add the context menu items
     idm_clear_sel     = add_menu("Clear selection", "D");
     idm_single_mode   = add_menu("Switch to ungroupped view", "U");
     idm_combined_mode = add_menu("Switch to groupped view", "G");
 
+    // Set initial selection mode
     set_sel_mode(in_sel_mode);
   }
 
+  /**
+  * @brief Toggle node selection
+  */
   void toggle_select_node(int cur_node)
   {
     ncolormap_t::iterator p = sel_nodes.find(cur_node);
@@ -499,42 +610,50 @@ public:
       sel_nodes[cur_node] = NODE_SEL_COLOR;
     else
       sel_nodes.erase(p);
+
     refresh(gvrfm_soft);
   }
-
-
 };
 gsgraphview_t::idmenucbtx_t gsgraphview_t::menu_ids;
 
 
 //--------------------------------------------------------------------------
-enum gsch_node_type_t
+/**
+* @brief Types of lines in the chooser
+*/
+enum gsch_line_type_t
 {
-  chnt_gm  = 0,
-  chnt_gd  = 1,
-  chnt_nl  = 3,
+  chlt_gm  = 0,
+  chlt_gd  = 1,
+  chlt_nl  = 3,
 };
 
 //--------------------------------------------------------------------------
-class gschooser_node_t
+/**
+* @brief Chooser line structure
+*/
+class gschooser_line_t
 {
 public:
-  gsch_node_type_t type;
+  gsch_line_type_t type;
   groupman_t *gm;
   groupdef_t *gd;
   nodegroup_listp_t *ngl;
-  pnodedef_list_t nl;
+  pnodedef_list_t ndl;
 
-  gschooser_node_t()
+  /**
+  * @brief Constructor
+  */
+  gschooser_line_t()
   {
     gm = NULL;
     gd = NULL;
     ngl = NULL;
-    nl = NULL;
+    ndl = NULL;
   }
 };
 
-typedef qvector<gschooser_node_t> chooser_node_vec_t;
+typedef qvector<gschooser_line_t> chooser_lines_vec_t;
 
 //--------------------------------------------------------------------------
 /**
@@ -544,7 +663,7 @@ class gschooser_t
 {
 private:
   static gschooser_t *singleton;
-  chooser_node_vec_t ch_nodes;
+  chooser_lines_vec_t ch_nodes;
 
   chooser_info_t chi;
   gsgraphview_t *gsgv;
@@ -600,6 +719,7 @@ private:
   */
   void delete_singleton()
   {
+    //TODO: I don't like this singleton thing
     if ((chi.flags & CH_MODAL) != 0)
       return;
 
@@ -627,18 +747,18 @@ private:
   /**
   * @brief Return chooser line description
   */
-  void get_node_desc(gschooser_node_t *node, qstring *out)
+  void get_node_desc(gschooser_line_t *node, qstring *out)
   {
     switch (node->type)
     {
       // Handle a group file node
-      case chnt_gm:
+      case chlt_gm:
       {
         *out = qbasename(node->gm->get_source_file());
         break;
       }
       // Handle group definitions
-      case chnt_gd:
+      case chlt_gd:
       {
         out->sprnt(MY_TABSTR "%s (%s) NGL(%d)", 
           node->gd->groupname.c_str(), 
@@ -647,12 +767,12 @@ private:
         break;
       }
       // Handle a node definition list
-      case chnt_nl:
+      case chlt_nl:
       {
-        size_t sz = node->nl->size();
+        size_t sz = node->ndl->size();
         out->sprnt(MY_TABSTR MY_TABSTR "NDL(%d):(", sz);
-        for (nodedef_list_t::iterator it=node->nl->begin();
-              it != node->nl->end();
+        for (nodedef_list_t::iterator it=node->ndl->begin();
+              it != node->ndl->end();
               ++it)
         {
           nodedef_t *nd = &*it;
@@ -684,7 +804,7 @@ private:
       if (n >= ch_nodes.size())
         return;
 
-      gschooser_node_t &cn = ch_nodes[n];
+      gschooser_line_t &cn = ch_nodes[n];
       qstring desc;
       get_node_desc(&cn, &desc);
       qstrncpy(arrptr[0], desc.c_str(), MAXSTR);
@@ -692,7 +812,7 @@ private:
   }
 
   /**
-  * @brief 
+  * @brief Handle chooser line deleltion
   */
   uint32 on_delete(uint32 n)
   {
@@ -705,44 +825,14 @@ private:
   */
   void on_insert()
   {
-    //TODO: askfolder()
-    //      load the bbgroup file
+    //TODO: askfolder() -> load the bbgroup file
   }
 
 #define DECL_CG \
   colorgen_t cg; \
-  cg.L_INT = -15; \
-  colorvargen_t cv; \
-  bgcolor_t clr
+  cg.L_INT = -15
 
   /**
-  * @brief Generates a color. Prefers first a color variant
-  */
-  bgcolor_t get_color_anyway(
-      colorgen_t &cg, 
-      colorvargen_t &cv)
-  {
-    bgcolor_t clr;
-
-    while (true)
-    {
-      // Get a color variant
-      clr = cv.get_color();
-      if (clr != 0)
-        break;
-
-      // No variant? Pick a new color
-      if (!cg.get_colorvar(cv))
-      {
-        // No more colors, just rewind
-        cg.rewind();
-        cg.get_colorvar(cv);
-      }
-    }
-    return clr;
-  }
-
-    /**
   * @brief Callback that handles ENTER or double clicks on a chooser node
   */
   void on_enter(uint32 n)
@@ -751,13 +841,13 @@ private:
       return;
 
     int nid;
-    gschooser_node_t &chn = ch_nodes[n-1];
-    if (chn.type == chnt_nl && !chn.nl->empty())
+    gschooser_line_t &chn = ch_nodes[n-1];
+    if (chn.type == chlt_nl && !chn.ndl->empty())
     {
       // Get first node in this nodedef list
-      nid = chn.nl->begin()->nid;
+      nid = chn.ndl->begin()->nid;
     }
-    else if (   chn.type == chnt_gd 
+    else if (   chn.type == chlt_gd 
              && !chn.gd->nodegroups.empty() )
     {
       nodegroup_listp_t *ng = &chn.gd->nodegroups;
@@ -771,7 +861,7 @@ private:
       return;
     }
     // Select the current node
-    viewer_center_on(gsgv->gv, nid);
+    jump_to_node(gsgv->gv, nid);
   }
 
   /**
@@ -779,82 +869,46 @@ private:
   */
   void select_node(uint32 n)
   {
-    gschooser_node_t &chn = ch_nodes[n];
+    gschooser_line_t &chn = ch_nodes[n];
 
     switch (chn.type)
     {
-      case chnt_gm:
+      case chlt_gm:
       {
         DECL_CG;
  
         // Walk all groups
         groupdef_listp_t *groups = gm->get_groups();
-        for (groupdef_listp_t::iterator it=groups->begin();
-             it != groups->end();
-             ++it)
-        {
-          // Get the group definition -> node groups in this def
-          groupdef_t *gd = *it;
-
-          // Assign a new color variant for each groupdef
-          cg.get_colorvar(cv);
-          for (nodegroup_listp_t::iterator it=gd->nodegroups.begin();
-               it != gd->nodegroups.end();
-               ++it)
-          {
-            // Use a new color variant for each NDL
-            clr = get_color_anyway(cg, cv);
-            pnodedef_list_t nl = *it;
-            for (nodedef_list_t::iterator it = nl->begin();
-              it != nl->end();
-              ++it)
-            {
-              gsgv->sel_nodes[it->nid] = clr;
-            }
-          }
-        }
+        gsgv->set_selected_nodes(groups, cg, true);
         break;
       }
+      //
       // Handle double click
-      case chnt_nl:
-      case chnt_gd:
+      //
+      case chlt_nl:
+      case chlt_gd:
       {
         if (gsgv == NULL || gsgv->gv == NULL)
           break;
 
         DECL_CG;
+        colorvargen_t cv;
+        bgcolor_t clr;
 
-        gsgv->sel_nodes.clear();
-        if (chn.type == chnt_nl)
+        gsgv->clear_selection(true);
+        if (chn.type == chlt_nl)
         {
+          // Pick a color
           cg.get_colorvar(cv);
-          clr = get_color_anyway(cg, cv);
-          for (nodedef_list_t::iterator it = chn.nl->begin();
-               it != chn.nl->end();
-               ++it)
-          {
-            gsgv->sel_nodes[it->nid] = clr;
-          }
+          clr = cg.get_color_anyway(cv);
+
+          gsgv->set_selected_nodes(chn.ndl, clr);
         }
         // chnt_gd
         else
         {
           // Use one color for all the different group defs
-          cg.get_colorvar(cv);
-          for (nodegroup_listp_t::iterator it=chn.ngl->begin();
-               it != chn.ngl->end();
-               ++it)
-          {
-            // Use a new color variant for each NDL
-            clr = get_color_anyway(cg, cv);
-            pnodedef_list_t nl = *it;
-            for (nodedef_list_t::iterator it = nl->begin();
-                 it != nl->end();
-                 ++it)
-            {
-              gsgv->sel_nodes[it->nid] = clr;
-            }
-          }
+          gsgv->set_selected_nodes(chn.ngl, cg, true);
         }
         gsgv->refresh(gvrfm_soft);
         break;
@@ -884,8 +938,9 @@ private:
   void on_init()
   {
     const char *fn;
-    fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\f1.bbgroup";
+    //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\f1.bbgroup";
     //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\main.bbgroup";
+    fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\doit.bbgroup";
     if (!load_file(fn))
       return;
 
@@ -983,9 +1038,9 @@ public:
     }
 
     // Add the first-level node = bbgroup file
-    gschooser_node_t *node = &ch_nodes.push_back();
-    node->type = chnt_gm;
-    node->gm = gm;
+    gschooser_line_t *line = &ch_nodes.push_back();
+    line->type = chlt_gm;
+    line->gm = gm;
 
     for (groupdef_listp_t::iterator it=gm->get_groups()->begin();
          it != gm->get_groups()->end();
@@ -994,12 +1049,12 @@ public:
       groupdef_t &gd = **it;
 
       // Add the second-level node = a set of group defs
-      node = &ch_nodes.push_back();
+      line = &ch_nodes.push_back();
       nodegroup_listp_t &ngl = gd.nodegroups;
-      node->type = chnt_gd;
-      node->gd   = &gd;
-      node->gm   = gm;
-      node->ngl  = &ngl;
+      line->type = chlt_gd;
+      line->gd   = &gd;
+      line->gm   = gm;
+      line->ngl  = &ngl;
 
       // Add each nodedef list within each node group
       for (nodegroup_listp_t::iterator it = ngl.begin();
@@ -1008,12 +1063,12 @@ public:
       {
         pnodedef_list_t nl = *it;
         // Add the third-level node = nodedef
-        node = &ch_nodes.push_back();
-        node->type = chnt_nl;
-        node->nl  = nl;
-        node->ngl = &ngl;
-        node->gm  = gm;
-        node->gd  = &gd;
+        line = &ch_nodes.push_back();
+        line->type = chlt_nl;
+        line->ndl  = nl;
+        line->ngl = &ngl;
+        line->gm  = gm;
+        line->gd  = &gd;
       }
     }
     return true;
