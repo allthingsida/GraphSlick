@@ -15,6 +15,7 @@ This module implements various utility functions
 #include <pro.h>
 #include <funcs.hpp>
 #include <gdl.hpp>
+#include <graph.hpp>
 
 //--------------------------------------------------------------------------
 /**
@@ -64,5 +65,8 @@ void get_disasm_text(
 bool get_func_flowchart(
     ea_t ea, 
     qflow_chart_t &qf);
+
+//--------------------------------------------------------------------------
+void jump_to_node(graph_viewer_t *gv, int nid);
 
 #endif

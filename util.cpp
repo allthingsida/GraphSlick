@@ -6,8 +6,9 @@
 History
 --------
 
-10/23/2013 - eliasb             - First version, it comes from refactored 
-                                  code from the plugin module
+10/23/2013 - eliasb   - First version, it comes from refactored 
+                        code from the plugin module
+10/25/2013 - eliasb   - Added jump_to_node()
 --------------------------------------------------------------------------*/
 
 //--------------------------------------------------------------------------
@@ -57,4 +58,22 @@ bool get_func_flowchart(
     FC_PREDS);
 
   return true;
+}
+
+//--------------------------------------------------------------------------
+void jump_to_node(graph_viewer_t *gv, int nid)
+{
+  viewer_center_on(gv, nid);
+
+  int x, y;
+
+  // will return a place only when a node was previously selected
+  place_t *old_pl = get_custom_viewer_place(gv, false, &x, &y);
+  if (old_pl == NULL)
+    return;
+
+  user_graph_place_t *new_pl = (user_graph_place_t *) old_pl->clone();
+  new_pl->node = nid;
+  jumpto(gv, new_pl, x, y);
+  delete new_pl;
 }
