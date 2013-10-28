@@ -29,6 +29,8 @@ History
                                 - Factored out get_color_anyway() to the colorgen module
                                 - Proper support for node selection/coloring in single and combined mode
                                 - Change naming from chooser nodes to chooser line
+10/28/2013 - eliasb             - Separated highlight and selection
+                                - Added support for 'user hint' on the node graph
 */
 
 #pragma warning(disable: 4018 4800)
@@ -89,6 +91,7 @@ private:
   gsgraphview_t   **parent_ref;
 
   int idm_clear_sel;
+  int idm_clear_highlight;
   int idm_set_sel_mode;
 
   int idm_single_mode;
@@ -96,7 +99,8 @@ private:
 
   bool in_sel_mode;
 
-  ncolormap_t     sel_nodes;
+  ncolormap_t     highlighted_nodes;
+  ncolormap_t     selected_nodes;
 
 public:
   int             cur_node;
@@ -130,6 +134,11 @@ private:
     if (menu_id == idm_clear_sel)
     {
       clear_selection();
+    }
+    // Clear selection
+    if (menu_id == idm_clear_highlight)
+    {
+      clear_highlighting();
     }
     // Selection mode change
     else if (menu_id == idm_set_sel_mode)
@@ -258,7 +267,8 @@ private:
           mg->clear();
           node_map.clear();
           ndl2id.clear();
-          sel_nodes.clear();
+          highlighted_nodes.clear();
+          selected_nodes.clear();
 		  
     		  // Remember the current graph mode
           current_graph_mode = refresh_mode;
@@ -283,14 +293,51 @@ private:
         const char **text  = va_arg(va, const char **);
         bgcolor_t *bgcolor = va_arg(va, bgcolor_t *);
 
+        // Retrieve the node text
         *text = get_node(node)->text.c_str();
-        ncolormap_t::iterator psel = sel_nodes.find(node);
-        if (bgcolor != NULL && psel != sel_nodes.end())
+
+        // Caller requested a bgcolor?
+        if (bgcolor != NULL) do
+        {
+          // Selection data has priority over highlight
+          ncolormap_t::iterator psel = selected_nodes.find(node);
+          if (psel == selected_nodes.end())
+          {
+            // No selection? Get highlight data
+            psel = highlighted_nodes.find(node);
+            // No highlight? Do nothing
+            if (psel == highlighted_nodes.end())
+              break;
+          }
+          // Pass the color
           *bgcolor = psel->second;
+        } while (false);
 
         result = 1;
         break;
       }
+
+      //
+      // retrieve hint for the user-defined graph
+      //
+      case grcode_user_hint:
+      {
+        va_arg(va, mutable_graph_t *);
+        int mousenode = va_arg(va, int);
+        va_arg(va, int); // mouseedge_src
+        va_arg(va, int); // mouseedge_dst
+        char **hint = va_arg(va, char **);
+
+        if (mousenode != -1)
+        {
+          // 'hint' must be allocated by qalloc() or qstrdup()
+          *hint = qstrdup(get_node(mousenode)->text.c_str());
+        }
+        // out: 0-use default hint, 1-use proposed hint
+        result = 1;
+        break;
+      }
+
       //
       // The graph is being destroyed
       //
@@ -343,15 +390,15 @@ public:
   }
 
   /**
-  * @brief Selects node definition lists
+  * @brief Highlights node definition lists
   */
-  bool set_selected_nodes(
+  bool set_highlighted_nodes(
       pnodedef_list_t ndl, 
       bgcolor_t clr,
       bool additive = true)
   {
     if (!additive)
-      clear_selection(true);
+      clear_highlighting(true);
 
     // Combined mode?
     if (current_graph_mode == gvrfm_combined_mode)
@@ -361,7 +408,7 @@ public:
       if (it == ndl2id.end())
         return false;
 
-      sel_nodes[it->second] = clr;
+      highlighted_nodes[it->second] = clr;
     }
     // Single view mode?
     else if (current_graph_mode == gvrfm_single_mode)
@@ -371,7 +418,7 @@ public:
            it != ndl->end();
            ++it)
       {
-        sel_nodes[it->nid] = clr;
+        highlighted_nodes[it->nid] = clr;
       }
     }
     // Unknown mode
@@ -383,15 +430,15 @@ public:
   }
 
   /**
-  * @brief Selects a nodegroup list
+  * @brief Highlight a nodegroup list
   */
-  void set_selected_nodes(
+  void set_highlighted_nodes(
           nodegroup_listp_t *ngl, 
           colorgen_t &cg, 
           bool additive = true)
   {
     if (!additive)
-      clear_selection(true);
+      clear_highlighting(true);
 
     // Use one color for all the different group defs
     colorvargen_t cv;
@@ -405,14 +452,14 @@ public:
       bgcolor_t clr = cg.get_color_anyway(cv);
       pnodedef_list_t nl = *it;
 
-      set_selected_nodes(nl, clr, additive);
+      set_highlighted_nodes(nl, clr, additive);
     }
   }
 
   /**
   * @brief Selects all group definitions
   */
-  void set_selected_nodes(
+  void set_highlighted_nodes(
     groupdef_listp_t *groups,
     colorgen_t &cg,
     bool additive = true)
@@ -434,7 +481,7 @@ public:
         // Use a new color variant for each NDL
         bgcolor_t clr = cg.get_color_anyway(cv);
         pnodedef_list_t ndl = *it;
-        set_selected_nodes(ndl, clr, additive);
+        set_highlighted_nodes(ndl, clr, additive);
       }
     }
   }
@@ -453,7 +500,17 @@ public:
   */
   void clear_selection(bool dont_refresh = false)
   {
-    sel_nodes.clear();
+    selected_nodes.clear();
+    if (dont_refresh)
+      refresh(gvrfm_soft);
+  }
+
+  /**
+  * @brief Clear the highlighted nodes
+  */
+  void clear_highlighting(bool dont_refresh = false)
+  {
+    highlighted_nodes.clear();
     if (dont_refresh)
       refresh(gvrfm_soft);
   }
@@ -507,7 +564,6 @@ public:
 
         open_tform(form, FORM_TAB|FORM_MENU|FORM_QWIDGET);
         if (gv != NULL)
-
           gsgv->init(gv, form);
 
         return gsgv;
@@ -527,15 +583,24 @@ public:
     const char *name,
     const char *hotkey = NULL)
   {
+    // Static ID for all menu item IDs
     static int id = 0;
-    ++id;
 
-    // Create a menu context
-    menucbctx_t ctx;
-    ctx.gv = this;
-    ctx.name = name;
+    // Is this a separator menu item?
+    bool is_sep = name[0] == '-' && name[1] == '\0';
 
-    menu_ids[id] = ctx;
+    // Only remember this item if it was not a separator
+    if (!is_sep)
+    {
+      ++id;
+
+      // Create a menu context
+      menucbctx_t ctx;
+      ctx.gv = this;
+      ctx.name = name;
+
+      menu_ids[id] = ctx;
+    }
 
     bool ok = viewer_add_menu_item(
       gv,
@@ -544,6 +609,10 @@ public:
       (void *)id,
       hotkey,
       0);
+
+    // Ignore return value for separator
+    if (is_sep)
+      return -1;
 
     if (!ok)
       menu_ids.erase(id);
@@ -575,7 +644,7 @@ public:
     cur_node = 0;
     gv = NULL;
     form = NULL;
-    refresh_mode = gvrfm_single_mode;
+    refresh_mode = gvrfm_combined_mode;
     set_parentref(NULL);
     in_sel_mode = false;
     idm_set_sel_mode = -1;
@@ -591,10 +660,19 @@ public:
     viewer_fit_window(gv);
     viewer_center_on(gv, 0);
 
+    //
     // Add the context menu items
-    idm_clear_sel     = add_menu("Clear selection", "D");
-    idm_single_mode   = add_menu("Switch to ungroupped view", "U");
-    idm_combined_mode = add_menu("Switch to groupped view", "G");
+	//
+    add_menu("-");
+    idm_clear_sel        = add_menu("Clear selection", "D");
+    idm_clear_highlight  = add_menu("Clear highlighting", "H");
+
+    // GS view mode menu
+    add_menu("-");
+    idm_single_mode      = add_menu("Switch to ungroupped view", "U");
+    idm_combined_mode    = add_menu("Switch to groupped view", "G");
+
+    add_menu("-");
 
     // Set initial selection mode
     set_sel_mode(in_sel_mode);
@@ -605,12 +683,13 @@ public:
   */
   void toggle_select_node(int cur_node)
   {
-    ncolormap_t::iterator p = sel_nodes.find(cur_node);
-    if (p == sel_nodes.end())
-      sel_nodes[cur_node] = NODE_SEL_COLOR;
+    ncolormap_t::iterator p = selected_nodes.find(cur_node);
+    if (p == selected_nodes.end())
+      selected_nodes[cur_node] = NODE_SEL_COLOR;
     else
-      sel_nodes.erase(p);
+      selected_nodes.erase(p);
 
+    // Refresh the graph to reflect selection
     refresh(gvrfm_soft);
   }
 };
@@ -847,8 +926,8 @@ private:
       // Get first node in this nodedef list
       nid = chn.ndl->begin()->nid;
     }
-    else if (   chn.type == chlt_gd 
-             && !chn.gd->nodegroups.empty() )
+    else if (    chn.type == chlt_gd 
+              && !chn.gd->nodegroups.empty() )
     {
       nodegroup_listp_t *ng = &chn.gd->nodegroups;
       pnodedef_list_t ndl0 = &(*(*ng->begin()));
@@ -879,7 +958,7 @@ private:
  
         // Walk all groups
         groupdef_listp_t *groups = gm->get_groups();
-        gsgv->set_selected_nodes(groups, cg, true);
+        gsgv->set_highlighted_nodes(groups, cg, true);
         break;
       }
       //
@@ -895,20 +974,20 @@ private:
         colorvargen_t cv;
         bgcolor_t clr;
 
-        gsgv->clear_selection(true);
+        gsgv->clear_highlighting(true);
         if (chn.type == chlt_nl)
         {
           // Pick a color
           cg.get_colorvar(cv);
           clr = cg.get_color_anyway(cv);
 
-          gsgv->set_selected_nodes(chn.ndl, clr);
+          gsgv->set_highlighted_nodes(chn.ndl, clr);
         }
         // chnt_gd
         else
         {
           // Use one color for all the different group defs
-          gsgv->set_selected_nodes(chn.ngl, cg, true);
+          gsgv->set_highlighted_nodes(chn.ngl, cg, true);
         }
         gsgv->refresh(gvrfm_soft);
         break;
