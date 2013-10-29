@@ -31,6 +31,8 @@ History
                                 - Change naming from chooser nodes to chooser line
 10/28/2013 - eliasb             - Separated highlight and selection
                                 - Added support for 'user hint' on the node graph
+                                - Added 'Load bbgroup' support
+                                - Added quick selection support (no UI for it though)
 */
 
 #pragma warning(disable: 4018 4800)
@@ -97,6 +99,8 @@ private:
   int idm_single_mode;
   int idm_combined_mode;
 
+  int idm_test;
+
   bool in_sel_mode;
 
   ncolormap_t     highlighted_nodes;
@@ -135,8 +139,8 @@ private:
     {
       clear_selection();
     }
-    // Clear selection
-    if (menu_id == idm_clear_highlight)
+    // Clear highlighted nodes
+    else if (menu_id == idm_clear_highlight)
     {
       clear_highlighting();
     }
@@ -153,6 +157,31 @@ private:
     else if (menu_id == idm_combined_mode)
     {
       refresh(gvrfm_combined_mode);
+    }
+    else if (menu_id == idm_test)
+    {
+      //
+      if (selected_nodes.size() <= 1)
+      {
+        msg("Not enough selected nodes\n");
+        return;
+      }
+
+      // Find NDL of first selection
+      ncolormap_t::iterator it = selected_nodes.begin();
+
+      nodeloc_t *loc = gm->find_nodeid_loc(it->first);
+      pnodedef_list_t ndl0 = loc->nl;
+      
+      //;!
+      for (;it != selected_nodes.end();++it)
+      {
+
+      }
+
+      //loc0->nl
+      //gm->all_nodes
+      //loc0->nl
     }
   }
 
@@ -299,13 +328,11 @@ private:
         // Caller requested a bgcolor?
         if (bgcolor != NULL) do
         {
-          // Selection data has priority over highlight
+          // Selection has priority over highlight
           ncolormap_t::iterator psel = selected_nodes.find(node);
           if (psel == selected_nodes.end())
           {
-            // No selection? Get highlight data
             psel = highlighted_nodes.find(node);
-            // No highlight? Do nothing
             if (psel == highlighted_nodes.end())
               break;
           }
@@ -330,8 +357,14 @@ private:
 
         if (mousenode != -1)
         {
+          // Get node data, aim for 'hint' field then 'text'
+          gnode_t *node_data = get_node(mousenode);
+          qstring *s = &node_data->hint;
+          if (s->empty())
+            s = &node_data->text;
+
           // 'hint' must be allocated by qalloc() or qstrdup()
-          *hint = qstrdup(get_node(mousenode)->text.c_str());
+          *hint = qstrdup(s->c_str());
         }
         // out: 0-use default hint, 1-use proposed hint
         result = 1;
@@ -673,6 +706,7 @@ public:
     idm_combined_mode    = add_menu("Switch to groupped view", "G");
 
     add_menu("-");
+    idm_test             = add_menu("Test", "Q");
 
     // Set initial selection mode
     set_sel_mode(in_sel_mode);
@@ -681,7 +715,7 @@ public:
   /**
   * @brief Toggle node selection
   */
-  void toggle_select_node(int cur_node)
+  void toggle_select_node(int cur_node, bool quick_mode = false)
   {
     ncolormap_t::iterator p = selected_nodes.find(cur_node);
     if (p == selected_nodes.end())
@@ -689,12 +723,19 @@ public:
     else
       selected_nodes.erase(p);
 
-    // Refresh the graph to reflect selection
-    refresh(gvrfm_soft);
+    // With quick selection mode, just display a message and don't force a refresh
+    if (quick_mode)
+    {
+      msg("quick selected %d\n", cur_node);
+    }
+    else
+    {
+      // Refresh the graph to reflect selection
+      refresh(gvrfm_soft);
+    }
   }
 };
 gsgraphview_t::idmenucbtx_t gsgraphview_t::menu_ids;
-
 
 //--------------------------------------------------------------------------
 /**
@@ -812,7 +853,7 @@ private:
   void on_select(const intvec_t &sel)
   {
     // Delegate this task to the 'enter' routine
-    select_node(sel[0]-1);
+    highlight_node(sel[0]-1);
   }
 
   /**
@@ -904,7 +945,11 @@ private:
   */
   void on_insert()
   {
-    //TODO: askfolder() -> load the bbgroup file
+    const char *filename = askfile_c(0, "*.bbgroup", "Please select BBGROUP file to load");
+    if (filename == NULL)
+      return;
+
+    load_file_show_graph(filename);
   }
 
 #define DECL_CG \
@@ -946,7 +991,7 @@ private:
   /**
   * @brief Callback that handles node selection
   */
-  void select_node(uint32 n)
+  void highlight_node(uint32 n)
   {
     gschooser_line_t &chn = ch_nodes[n];
 
@@ -1005,10 +1050,39 @@ private:
   }
 
   /**
+  * @brief Refresh the chooser lines
+  */
+  void refresh()
+  {
+    refresh_chooser(STR_GS_PANEL);
+  }
+
+  /**
   * @brief Handles chooser refresh request
   */
   void on_refresh()
   {
+    //TODO: handle refresh chooser
+  }
+
+  bool load_file_show_graph(const char *filename)
+  {
+    if (!load_file(filename))
+      return false;
+
+    // Show the graph
+    nodedef_listp_t *nodes = gm->get_nodes();
+    if (nodes->empty())
+      return false;
+
+    nodedef_t *nd = *(nodes->begin());
+
+    gsgv = gsgraphview_t::show_graph(nd->start, gm);
+    if (gsgv == NULL)
+      return false;
+
+    gsgv->set_parentref(&gsgv);
+    return true;
   }
 
   /**
@@ -1016,20 +1090,13 @@ private:
   */
   void on_init()
   {
+#ifdef _DEBUG
     const char *fn;
     //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\f1.bbgroup";
     //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\main.bbgroup";
     fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\doit.bbgroup";
-    if (!load_file(fn))
-      return;
-
-    // Show the graph
-    nodedef_listp_t *nodes = gm->get_nodes();
-    nodedef_t *nd = *(nodes->begin());
-    
-    gsgv = gsgraphview_t::show_graph(nd->start, gm);
-    if (gsgv != NULL)
-      gsgv->set_parentref(&gsgv);
+    load_file_show_graph(fn);
+#endif
   }
 
   /**
@@ -1106,15 +1173,20 @@ public:
   */
   bool load_file(const char *filename)
   {
-    // Load a file and parse it
+    // Delete previous group manager
     delete gm;
     gm = new groupman_t();
+
+    // Load a file and parse it
     if (!gm->parse(filename))
     {
       msg("error: failed to parse group file '%s'\n", filename);
       delete gm;
       return false;
     }
+
+    // TODO: do not delete previous lines
+    ch_nodes.clear();
 
     // Add the first-level node = bbgroup file
     gschooser_line_t *line = &ch_nodes.push_back();
@@ -1145,9 +1217,9 @@ public:
         line = &ch_nodes.push_back();
         line->type = chlt_nl;
         line->ndl  = nl;
-        line->ngl = &ngl;
-        line->gm  = gm;
-        line->gd  = &gd;
+        line->ngl  = &ngl;
+        line->gm   = gm;
+        line->gd   = &gd;
       }
     }
     return true;

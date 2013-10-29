@@ -16,6 +16,8 @@ History
 10/24/2013 - eliasb     - Renamed class to a function like name and dropped the () operator
 10/25/2013 - eliasb     - Return the ndl2id map to the caller
                         - added 'append_node_id' param to func_to_mgraph()
+10/28/2013 - eliasb     - add 'hint' value to the combined blocks
+                        - show the 'groupname' or 'id' as text for combined nodes
 --------------------------------------------------------------------------*/
 
 
@@ -75,15 +77,30 @@ class fc_to_combined_mg
           if (--t > 0)
             gn.text.append(", ");
         }
+
+        qbasic_block_t &block = fc->blocks[it->nid];
+        qstring s;
+        get_disasm_text(
+          block.startEA, 
+          block.endEA, 
+          &s);
+        gn.hint.append(s);
+      }
+
+      if (!show_nids_only)
+      {
+        // Are there any groupped nodes?
+        if (loc->nl->size() > 1)
+        {
+          // Display the group name or the group id
+          if (!loc->gd->groupname.empty())
+            gn.text = loc->gd->groupname;
+          else
+            gn.text = loc->gd->id;
+        }
         else
         {
-          qbasic_block_t &block = fc->blocks[it->nid];
-          qstring s;
-          get_disasm_text(
-            block.startEA, 
-            block.endEA, 
-            &s);
-          gn.text.append(s);
+          gn.text = gn.hint;
         }
       }
 
@@ -114,7 +131,7 @@ class fc_to_combined_mg
     this->gm = gm;
     this->node_map = &node_map;
     this->fc = &fc;
-	this->ndl2id = &ndl2id;
+  	this->ndl2id = &ndl2id;
 
     // Compute the total size of nodes needed for the combined graph
     // The size is the total count of node def lists in each group def
