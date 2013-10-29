@@ -33,6 +33,7 @@ History
                                 - Added support for 'user hint' on the node graph
                                 - Added 'Load bbgroup' support
                                 - Added quick selection support (no UI for it though)
+                                - Added reload input file functionality
 */
 
 #pragma warning(disable: 4018 4800)
@@ -788,6 +789,7 @@ private:
   chooser_info_t chi;
   gsgraphview_t *gsgv;
   groupman_t *gm;
+  qstring last_loaded_file;
 
   static uint32 idaapi s_sizer(void *obj)
   {
@@ -936,7 +938,8 @@ private:
   */
   uint32 on_delete(uint32 n)
   {
-    // TODO: split a group
+    if (!last_loaded_file.empty())
+      load_file_show_graph(last_loaded_file.c_str());
     return n;
   }
 
@@ -1045,6 +1048,9 @@ private:
   */
   void on_destroy()
   {
+    if (chi.popup_names != NULL)
+      qfree((void *)chi.popup_names);
+
     close_graph();
     delete_singleton();
   }
@@ -1062,9 +1068,12 @@ private:
   */
   void on_refresh()
   {
-    //TODO: handle refresh chooser
+    //TODO: handle on refresh
   }
 
+  /**
+  * @brief Load and display a bbgroup file
+  */
   bool load_file_show_graph(const char *filename)
   {
     if (!load_file(filename))
@@ -1082,6 +1091,9 @@ private:
       return false;
 
     gsgv->set_parentref(&gsgv);
+
+    // Remember last loaded file
+    last_loaded_file = filename;
     return true;
   }
 
@@ -1128,7 +1140,16 @@ private:
     chi.refresh     = s_refresh;
     chi.select      = s_select;
     chi.initializer = s_initializer;
-    //chi.popup_names = NULL;   // first 5 menu item names (insert, delete, edit, refresh, copy)
+
+
+    // first 5 menu item names (insert, delete, edit, refresh, copy)
+    chi.popup_names = (const char **)qalloc(sizeof(char *) * 5);
+    *(((char **)chi.popup_names)+0) = "Load bbgroup file"; // Insert
+    *(((char **)chi.popup_names)+1) = "Reload bbgroup file"; // Delete
+    *(((char **)chi.popup_names)+2) = NULL; // Edit
+    *(((char **)chi.popup_names)+3) = NULL; // Refresh
+    *(((char **)chi.popup_names)+4) = NULL; // Copy
+
     //static uint32 idaapi *s_update(void *obj, uint32 n);
     //void (idaapi *edit)(void *obj, uint32 n);
     //static int idaapi s_get_icon)(void *obj, uint32 n);
