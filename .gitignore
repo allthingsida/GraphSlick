@@ -7,3 +7,5 @@ ipch/
 SR/
 SemiDebug/
 *.suo
+Debug64/
+Release64/

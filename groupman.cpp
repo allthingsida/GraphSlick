@@ -287,7 +287,6 @@ bool groupman_t::parse(const char *filename)
       // Set key pointer
       char *key = token;
 
-
       if (stricmp(key, STR_ID) == 0)
       {
         g->id = val;  

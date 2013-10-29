@@ -183,7 +183,7 @@ public:
   */
   groupdef_listp_t *get_groups() { return &groups; }
 
-  nodedef_listp_t *get_nodes() { return &all_nodes; }
+  nodedef_listp_t  *get_nodes()  { return &all_nodes; }
 
   /**
   * @brief Utility function to convert a string to the 'asize_t' type
@@ -232,6 +232,9 @@ public:
   */
   nodeloc_t *find_node_loc(ea_t ea);
 
+  /**
+  * @brief Return the file name that was used to load this group manager
+  */
   const char *get_source_file();
 };
 #endif
