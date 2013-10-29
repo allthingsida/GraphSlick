@@ -18,6 +18,7 @@ History
                         - added 'append_node_id' param to func_to_mgraph()
 10/28/2013 - eliasb     - add 'hint' value to the combined blocks
                         - show the 'groupname' or 'id' as text for combined nodes
+10/29/2013 - eliasb     - added sanity checks to fc_to_combined_mg()
 --------------------------------------------------------------------------*/
 
 
@@ -54,21 +55,23 @@ class fc_to_combined_mg
 
     // Find how this single node is defined in the group manager
     nodeloc_t *loc = gm->find_nodeid_loc(n);
-    
+    if (loc == NULL)
+      return -1;
+
     // Does this node have a group yet? (ndl)
-    pndl2id_t::iterator it = ndl2id->find(loc->nl);
+    pndl2id_t::iterator it = ndl2id->find(loc->ndl);
     if (it == ndl2id->end())
     {
       // Assign an auto-incr id
       ndl_id = ndl2id->size();  
-      (*ndl2id)[loc->nl] = ndl_id;
+      (*ndl2id)[loc->ndl] = ndl_id;
 
       // Initial text for this ndl is the current single node id
       gnode_t gn;
       gn.id = ndl_id;
-      size_t t = loc->nl->size();
-      for (nodedef_list_t::iterator it=loc->nl->begin();
-           it != loc->nl->end();
+      size_t t = loc->ndl->size();
+      for (nodedef_list_t::iterator it=loc->ndl->begin();
+           it != loc->ndl->end();
            ++it)
       {
         if (show_nids_only)
@@ -90,7 +93,7 @@ class fc_to_combined_mg
       if (!show_nids_only)
       {
         // Are there any groupped nodes?
-        if (loc->nl->size() > 1)
+        if (loc->ndl->size() > 1)
         {
           // Display the group name or the group id
           if (!loc->gd->groupname.empty())
@@ -117,13 +120,13 @@ class fc_to_combined_mg
   }
 
   /**
-  * @brief 
+  * @brief Build the combined mutable graph from the groupman and a flowchart
   */
-  void build(
+  bool build(
     qflow_chart_t &fc,
     groupman_t *gm,
     gnodemap_t &node_map,
-	pndl2id_t &ndl2id,
+    pndl2id_t &ndl2id,
     mutable_graph_t *mg)
   {
     // Take a reference to the local variables so they are used
@@ -153,6 +156,8 @@ class fc_to_combined_mg
     {
       // Figure out the combined node ID
       int ndl_id = get_ndlid(n);
+      if (ndl_id == -1)
+        return false;
 
       // Build the edges
       for (int isucc=0, succ_sz=fc.nsucc(n); 
@@ -164,6 +169,9 @@ class fc_to_combined_mg
 
         // This node belongs to the same NDL?
         int succ_ndlid = get_ndlid(nsucc);
+        if (succ_ndlid == -1)
+          return false;
+
         if (succ_ndlid == ndl_id)
         {
           // Do nothing, consider as one node
@@ -173,6 +181,7 @@ class fc_to_combined_mg
         mg->add_edge(ndl_id, succ_ndlid, NULL);
       }
     }
+    return true;
   }
 public:
   /**
