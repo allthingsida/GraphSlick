@@ -28,12 +28,17 @@ struct nodedef_t
   {
   }
 };
+typedef nodedef_t *pnodedef_t;
 
 //--------------------------------------------------------------------------
 /**
 * @brief A list of nodes: makes a group
 */
-typedef qlist<nodedef_t> nodedef_list_t;
+class nodedef_list_t: public qlist<pnodedef_t>
+{
+public:
+  void free_nodes();
+};
 typedef nodedef_list_t *pnodedef_list_t;
 
 //--------------------------------------------------------------------------
@@ -47,13 +52,17 @@ typedef std::map<pnodedef_list_t, int> pndl2id_t;
 /**
 * @brief A list of node definition pointers
 */
-typedef qlist<nodedef_t *> nodedef_listp_t;
+typedef qlist<pnodedef_t> nodedef_listp_t;
 
 //--------------------------------------------------------------------------
 /**
 * @brief A list of node groups
 */
-typedef qlist<pnodedef_list_t> nodegroup_listp_t;
+class nodegroup_listp_t: public qlist<pnodedef_list_t>
+{
+public:
+  void free_ndls(bool free_nodes);
+};
 
 //--------------------------------------------------------------------------
 /**
@@ -88,7 +97,8 @@ struct groupdef_t
     return ndl;
   }
 };
-typedef qlist<groupdef_t *>    groupdef_listp_t;
+typedef groupdef_t *pgroupdef_t;
+typedef qlist<pgroupdef_t>    groupdef_listp_t;
 typedef std::set<groupdef_t *> groupdef_setp_t;
 
 //--------------------------------------------------------------------------
@@ -97,16 +107,16 @@ typedef std::set<groupdef_t *> groupdef_setp_t;
 */
 struct nodeloc_t
 {
-  groupdef_t *gd;
+  pgroupdef_t gd;
   pnodedef_list_t nl;
-  nodedef_t *nd;
+  pnodedef_t nd;
 
   nodeloc_t(): gd(NULL), nl(NULL), nd(NULL)
   {
   }
-  nodeloc_t(groupdef_t *gd, 
+  nodeloc_t(pgroupdef_t gd, 
             pnodedef_list_t nl,
-            nodedef_t *nd): gd(gd), nl(nl), nd(nd)
+            pnodedef_t nd): gd(gd), nl(nl), nd(nd)
   {
   }
 };
@@ -117,7 +127,7 @@ struct nodeloc_t
 */
 class groupnet_t
 {
-  typedef std::map<groupdef_t *, groupdef_setp_t *> groupnet_map_t;
+  typedef std::map<pgroupdef_t, groupdef_setp_t *> groupnet_map_t;
   groupnet_map_t network;
 public:
   /**
@@ -128,7 +138,7 @@ public:
   /**
   * @brief Return the successor group def set
   */
-  groupdef_setp_t *get_succs(groupdef_t *key);
+  groupdef_setp_t *get_succs(pgroupdef_t key);
 
   ~groupnet_t()
   {
@@ -169,7 +179,7 @@ private:
   /**
   * @brief Parse a nodeset string
   */
-  void parse_nodeset(groupdef_t *g, char *str);
+  void parse_nodeset(pgroupdef_t g, char *str);
 
   /**
   * @brief Method to initialize lookups
@@ -209,7 +219,7 @@ public:
   /**
   * @brief Add a new group definition
   */
-  groupdef_t *add_group();
+  pgroupdef_t add_group();
 
   /**
   * @brief Rewrites the structure from memory back to a file

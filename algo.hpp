@@ -73,12 +73,12 @@ class fc_to_combined_mg
       {
         if (show_nids_only)
         {
-          gn.text.cat_sprnt("%d", it->nid);
+          gn.text.cat_sprnt("%d", (*it)->nid);
           if (--t > 0)
             gn.text.append(", ");
         }
 
-        qbasic_block_t &block = fc->blocks[it->nid];
+        qbasic_block_t &block = fc->blocks[(*it)->nid];
         qstring s;
         get_disasm_text(
           block.startEA, 

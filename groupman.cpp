@@ -10,6 +10,7 @@ History
 10/22/2013 - eliasb             - Added gm.get_nodes()
                                 - Change group def list type name
 10/25/2013 - eliasb             - typedef nodedef_list_t * as pnodedef_list_t
+10/28/2013 - eliasb             - made nodedef_t as a pointer in the nodedef_list class
 --------------------------------------------------------------------------*/
 
 #include "groupman.h"
@@ -27,6 +28,36 @@ static const char STR_GROUPPED[]    = "GROUPPED";
 static const char STR_SELECTED[]    = "SELECTED";
 static const char STR_NODESET[]     = "NODESET";
 static const char STR_GROUP_NAME[]  = "GROUPNAME";
+
+
+//--------------------------------------------------------------------------
+//--  NODEGROUP_LIST CLASS  ------------------------------------------------
+//--------------------------------------------------------------------------
+void nodegroup_listp_t::free_ndls(bool free_nodes)
+{
+  for (iterator it=begin(); it != end(); ++it)
+  {
+    pnodedef_list_t ndl = *it;
+    if (free_nodes)
+      ndl->free_nodes();
+
+    delete ndl;
+  }
+}
+
+//--------------------------------------------------------------------------
+//--  NODEDEF_LIST CLASS  --------------------------------------------------
+//--------------------------------------------------------------------------
+
+//--------------------------------------------------------------------------
+void nodedef_list_t::free_nodes()
+{
+  for (iterator it=begin(); it != end(); ++it)
+  {
+    pnodedef_t nd = *it;
+    delete nd;
+  }
+}
 
 //--------------------------------------------------------------------------
 //--  GROUP NETWORK CLASS  -------------------------------------------------
@@ -107,10 +138,12 @@ void groupman_t::parse_nodeset(groupdef_t *g, char *str)
       if (qsscanf(p, "%d : %a : %a", &nid, &start, &end) <= 0)
         continue;
 
-      nodedef_t &node = ng->push_back();
-      node.nid = nid;
-      node.start = start;
-      node.end = end;
+      nodedef_t *node = new nodedef_t();
+      node->nid = nid;
+      node->start = start;
+      node->end = end;
+
+       ng->push_back(node);
     }
   }
 }
@@ -140,7 +173,7 @@ void groupman_t::initialize_lookups()
            ++it)
       {
         // Grab each node def
-        nodedef_t *nd = &*it;
+        nodedef_t *nd = *it;
         
         // Remember where this node is located
         node_to_loc[nd->nid] = nodeloc_t(gd, nl, nd);
@@ -178,7 +211,9 @@ void groupman_t::clear()
        it != groups.end();
        ++it)
   {
-    delete *it;
+    pgroupdef_t gd = *it;
+    gd->clear();
+    delete gd;
   }
   groups.clear();
 }
@@ -186,7 +221,7 @@ void groupman_t::clear()
 //--------------------------------------------------------------------------
 groupdef_t *groupman_t::add_group()
 {
-  groupdef_t *g = new groupdef_t();
+  pgroupdef_t g = new groupdef_t();
   groups.push_back(g);
   return g;
 }
@@ -233,7 +268,8 @@ bool groupman_t::emit(const char *filename)
         size_t c = nl->size();
         for (nodedef_list_t::iterator it = nl->begin();it != nl->end(); ++it)
         {
-          qfprintf(fp, "%d : %a : %a", it->nid, it->start, it->end);
+          nodedef_t *nd = *it;
+          qfprintf(fp, "%d : %a : %a", nd->nid, nd->start, nd->end);
           if (--c != 0)
             qfprintf(fp, ", ");
         }
@@ -321,6 +357,7 @@ bool groupman_t::parse(const char *filename)
   }
   in_file.close();
 
+  // Initialize cache
   initialize_lookups();
   return true;
 }
@@ -328,12 +365,7 @@ bool groupman_t::parse(const char *filename)
 //--------------------------------------------------------------------------
 void groupdef_t::clear()
 {
-  for (nodegroup_listp_t::iterator it=nodegroups.begin();
-       it != nodegroups.end();
-       ++it)
-  {
-    delete *it;
-  }
+  nodegroups.free_ndls(true);
   nodegroups.clear();
 }
 

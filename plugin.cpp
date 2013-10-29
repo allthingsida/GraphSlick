@@ -452,7 +452,7 @@ public:
            it != ndl->end();
            ++it)
       {
-        highlighted_nodes[it->nid] = clr;
+        highlighted_nodes[(*it)->nid] = clr;
       }
     }
     // Unknown mode
@@ -897,7 +897,7 @@ private:
               it != node->ndl->end();
               ++it)
         {
-          nodedef_t *nd = &*it;
+          nodedef_t *nd = *it;
           out->cat_sprnt("%d:%a:%a", nd->nid, nd->start, nd->end);
           if (--sz > 0)
             out->append(", ");
@@ -972,7 +972,7 @@ private:
     if (chn.type == chlt_nl && !chn.ndl->empty())
     {
       // Get first node in this nodedef list
-      nid = chn.ndl->begin()->nid;
+      nid = (*(chn.ndl->begin()))->nid;
     }
     else if (    chn.type == chlt_gd 
               && !chn.gd->nodegroups.empty() )
@@ -981,7 +981,7 @@ private:
       pnodedef_list_t ndl0 = &(*(*ng->begin()));
       if (ndl0->empty())
         return;
-      nid = ndl0->begin()->nid;
+      nid = (*(ndl0->begin()))->nid;
     }
     else
     {
@@ -1050,6 +1050,9 @@ private:
   {
     if (chi.popup_names != NULL)
       qfree((void *)chi.popup_names);
+    
+    delete gm;
+    gm = NULL;
 
     close_graph();
     delete_singleton();
@@ -1194,7 +1197,7 @@ public:
   */
   bool load_file(const char *filename)
   {
-    // Delete previous group manager
+    // Delete the previous group manager
     delete gm;
     gm = new groupman_t();
 
