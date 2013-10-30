@@ -219,8 +219,8 @@ bool func_to_mgraph(
     ea_t func_ea,
     mutable_graph_t *mg,
     gnodemap_t &node_map,
-    bool append_node_id = false,
-    qflow_chart_t *fc = NULL);
+    qflow_chart_t *fc = NULL,
+    bool append_node_id = false);
 
 //--------------------------------------------------------------------------
 /**

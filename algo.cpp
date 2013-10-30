@@ -5,8 +5,8 @@ bool func_to_mgraph(
     ea_t func_ea,
     mutable_graph_t *mg,
     gnodemap_t &node_map,
-    bool append_node_id,
-    qflow_chart_t *fc)
+    qflow_chart_t *fc,
+    bool append_node_id)
 {
   // Build function's flowchart (if needed)
   qflow_chart_t _fc;
