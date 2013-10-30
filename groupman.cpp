@@ -11,6 +11,9 @@ History
                                 - Change group def list type name
 10/25/2013 - eliasb             - typedef nodedef_list_t * as pnodedef_list_t
 10/28/2013 - eliasb             - made nodedef_t as a pointer in the nodedef_list class
+10/29/2013 - eliasb             - skip trailing spaces while parsing
+                                - added get_first_nd()
+                                - got rid of the 'all_ndls' structure and added nid2nd structure
 --------------------------------------------------------------------------*/
 
 #include "groupman.h"
@@ -29,6 +32,14 @@ static const char STR_SELECTED[]    = "SELECTED";
 static const char STR_NODESET[]     = "NODESET";
 static const char STR_GROUP_NAME[]  = "GROUPNAME";
 
+//--------------------------------------------------------------------------
+inline char *skip_spaces(char *p)
+{
+  while (*p != '\0' && qisspace(*p))
+    ++p;
+
+  return p;
+}
 
 //--------------------------------------------------------------------------
 //--  NODEGROUP_LIST CLASS  ------------------------------------------------
@@ -57,6 +68,13 @@ void nodedef_list_t::free_nodes()
     pnodedef_t nd = *it;
     delete nd;
   }
+}
+
+//--------------------------------------------------------------------------
+pnodedef_t nodedef_list_t::add_nodedef(pnodedef_t nd)
+{
+  push_back(nd);
+  return nd;
 }
 
 //--------------------------------------------------------------------------
@@ -107,25 +125,34 @@ groupdef_t::groupdef_t() : selected(false), groupped(false),
 }
 
 //--------------------------------------------------------------------------
+pnodedef_list_t groupdef_t::add_node_group()
+{
+  pnodedef_list_t ndl = new nodedef_list_t();
+  nodegroups.push_back(ndl);
+  return ndl;
+}
+
+//--------------------------------------------------------------------------
 //--  GROUP MANAGER CLASS  -------------------------------------------------
 //--------------------------------------------------------------------------
 
 //--------------------------------------------------------------------------
-void groupman_t::parse_nodeset(groupdef_t *g, char *str)
+bool groupman_t::parse_nodeset(groupdef_t *gd, char *grpstr)
 {
   // Find node group bounds
   for ( /*init*/ char *p_group_start = NULL, *p_group_end = NULL;
-        /* cond*/(p_group_start = strchr(str, '(')) != NULL
-             && (++p_group_start, (p_group_end = strchr(p_group_start, ')')) != NULL);
+        /* cond*/(p_group_start = strchr(grpstr, '(')) != NULL
+             && (p_group_start = skip_spaces(p_group_start+1), (p_group_end = strchr(p_group_start, ')')) != NULL);
         /*incr*/)
   {
+    // Terminate the string with the closing parenthesis
     *p_group_end = '\0';
 
     // Advance to next group
-    str = p_group_end + 1;
+    grpstr = skip_spaces(p_group_end + 1);
 
     // Add a new node group
-    pnodedef_list_t ng = g->add_node_group();
+    pnodedef_list_t ndl = gd->add_node_group();
 
     for (/*init*/ char *saved_ptr, 
                   *p = p_group_start, 
@@ -133,19 +160,29 @@ void groupman_t::parse_nodeset(groupdef_t *g, char *str)
          /*cond*/ p != NULL;
          /*incr*/ p = qstrtok(NULL, ",", &saved_ptr))
     {
+      p = skip_spaces(p);
+
       int nid;
       ea_t start = 0, end = 0;
       if (qsscanf(p, "%d : %a : %a", &nid, &start, &end) <= 0)
         continue;
 
-      nodedef_t *node = new nodedef_t();
-      node->nid = nid;
-      node->start = start;
-      node->end = end;
+      if (nid == 0)
+        continue;
 
-       ng->push_back(node);
+      // Create an ND
+      nodedef_t *nd = new nodedef_t();
+      nd->nid = nid;
+      nd->start = start;
+      nd->end = end;
+
+      ndl->push_back(nd);
+
+      // Map this node
+      all_nds[nid] = nd;
     }
   }
+  return true;
 }
 
 //--------------------------------------------------------------------------
@@ -153,7 +190,6 @@ void groupman_t::initialize_lookups()
 {
   // Clear previous cache structures
   node_to_loc.clear();
-  all_nodes.clear();
 
   // Build new cache
   for (groupdef_listp_t::iterator it=groups.begin();
@@ -177,9 +213,6 @@ void groupman_t::initialize_lookups()
         
         // Remember where this node is located
         node_to_loc[nd->nid] = nodeloc_t(gd, nl, nd);
-        
-        // Remember this nodedef
-        all_nodes.push_back(nd);
       }
     }
   }
@@ -191,11 +224,6 @@ asize_t groupman_t::str2asizet(const char *str)
   ea_t v;
   qsscanf(str, "%a", &v);
   return (asize_t)v;
-}
-
-//--------------------------------------------------------------------------
-groupman_t::groupman_t()
-{
 }
 
 //--------------------------------------------------------------------------
@@ -216,14 +244,17 @@ void groupman_t::clear()
     delete gd;
   }
   groups.clear();
+  all_nds.clear();
 }
 
 //--------------------------------------------------------------------------
-groupdef_t *groupman_t::add_group()
+groupdef_t *groupman_t::add_group(pgroupdef_t gd)
 {
-  pgroupdef_t g = new groupdef_t();
-  groups.push_back(g);
-  return g;
+  if (gd == NULL)
+    gd = new groupdef_t();
+
+  groups.push_back(gd);
+  return gd;
 }
 
 //--------------------------------------------------------------------------
@@ -286,7 +317,9 @@ bool groupman_t::emit(const char *filename)
 }
 
 //--------------------------------------------------------------------------
-bool groupman_t::parse(const char *filename)
+bool groupman_t::parse(
+    const char *filename, 
+    bool init_cache)
 {
   std::ifstream in_file(filename);
   if (!in_file.is_open())
@@ -295,7 +328,7 @@ bool groupman_t::parse(const char *filename)
   // Remember the opened file name
   this->filename = filename;
 
-  // Clear previous group def
+  // Clear previous items
   clear();
 
   std::string line;
@@ -304,14 +337,21 @@ bool groupman_t::parse(const char *filename)
     // Read the line
     std::getline(in_file, line);
 
-    // Take a copy of the line so we tokenize it
-    char *s = qstrdup(line.c_str());
+    // Skip comment or empty lines
+    char *s = skip_spaces((char *)line.c_str());
+    if (s[0] == '\0' || s[0] == '#')
+      continue;
 
+    // Take a copy of the line so we tokenize it
+    char *a_line = qstrdup(s);
+    s = a_line;
+
+    // Create a new group definition per line
     groupdef_t *g = add_group();
 
     for (char *saved_ptr, *token = qstrtok(s, ";", &saved_ptr); 
-      token != NULL;
-      token = qstrtok(NULL, ";", &saved_ptr))
+         token != NULL;
+         token = qstrtok(NULL, ";", &saved_ptr))
     {
       char *val = strchr(token, ':');
       if (val == NULL)
@@ -319,9 +359,10 @@ bool groupman_t::parse(const char *filename)
 
       // Kill separator and adjust value pointer
       *val++ = '\0';
+      val = skip_spaces(val);
 
       // Set key pointer
-      char *key = token;
+      char *key = skip_spaces(token);
 
       if (stricmp(key, STR_ID) == 0)
       {
@@ -349,16 +390,19 @@ bool groupman_t::parse(const char *filename)
       }
       else if (stricmp(key, STR_NODESET) == 0)
       {
-        parse_nodeset(g, val);
+        if (!parse_nodeset(g, val))
+          break;
       }
     }
     // Free this line
-    qfree(s);
+    qfree(a_line);
   }
   in_file.close();
 
   // Initialize cache
-  initialize_lookups();
+  if (init_cache)
+    initialize_lookups();
+
   return true;
 }
 
@@ -367,6 +411,23 @@ void groupdef_t::clear()
 {
   nodegroups.free_ndls(true);
   nodegroups.clear();
+}
+
+//--------------------------------------------------------------------------
+void groupdef_t::remove_node_group(pnodedef_list_t ndl)
+{
+  //TODO: test me
+  for (nodegroup_listp_t::iterator it=nodegroups.begin();
+       it != nodegroups.end();
+       ++it)
+  {
+    pnodedef_list_t fndl = *it;
+    if (fndl == ndl)
+    {
+      nodegroups.erase(it);
+      break;
+    }
+  }
 }
 
 //--------------------------------------------------------------------------
@@ -384,11 +445,11 @@ nodeloc_t *groupman_t::find_node_loc(ea_t ea)
 {
   //HINT: use a map with lower_bound() if this function is to be called
   //      frequently and speed is of importance
-  for (nodedef_listp_t::iterator it=all_nodes.begin();
-       it != all_nodes.end();
+  for (nid2ndef_t::iterator it = all_nds.begin();
+       it != all_nds.end();
        ++it)
   {
-    nodedef_t *nd = *it;
+    pnodedef_t nd = it->second;
     if (nd->start >= ea && ea < nd->end)
       return find_nodeid_loc(nd->nid);
   }
@@ -399,4 +460,27 @@ nodeloc_t *groupman_t::find_node_loc(ea_t ea)
 const char *groupman_t::get_source_file()
 {
   return filename.c_str();
+}
+
+//--------------------------------------------------------------------------
+pnodedef_t groupman_t::get_first_nd()
+{
+  if (groups.empty())
+    return NULL;
+
+  // Get the first group
+  pgroupdef_t first_group = (*(groups.begin()));
+  if (first_group->group_count() == 0)
+    return NULL;
+
+  // Get NDL count in the group
+  if (first_group->nodegroups.empty())
+    return NULL;
+
+  // Get first NDL
+  nodedef_listp_t *ndls = *(first_group->nodegroups.begin());
+  if (ndls->empty())
+    return NULL;
+  else
+    return *(ndls->begin());
 }

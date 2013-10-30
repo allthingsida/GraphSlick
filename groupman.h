@@ -38,6 +38,7 @@ class nodedef_list_t: public qlist<pnodedef_t>
 {
 public:
   void free_nodes();
+  pnodedef_t add_nodedef(pnodedef_t nd);
 };
 typedef nodedef_list_t *pnodedef_list_t;
 
@@ -47,6 +48,11 @@ typedef nodedef_list_t *pnodedef_list_t;
          Normally a node ID representing a group of nodes
 */
 typedef std::map<pnodedef_list_t, int> pndl2id_t;
+
+/**
+* @brief Map node ids to node definitions
+*/
+typedef std::map<int, pnodedef_t> nid2ndef_t;
 
 //--------------------------------------------------------------------------
 /**
@@ -90,12 +96,18 @@ struct groupdef_t
   * @brief Add a new node group
   * @return Node group
   */
-  inline pnodedef_list_t add_node_group()
-  {
-    pnodedef_list_t ndl = new nodedef_list_t();
-    nodegroups.push_back(ndl);
-    return ndl;
-  }
+  pnodedef_list_t add_node_group();
+
+  /**
+  * @brief TODO:
+  */
+  void remove_node_group(pnodedef_list_t ndl);
+
+  /**
+  * @brief Return the count of defined NDLs
+  */
+  inline size_t group_count() { return nodegroups.size(); }
+
 };
 typedef groupdef_t *pgroupdef_t;
 typedef qlist<pgroupdef_t>    groupdef_listp_t;
@@ -108,15 +120,15 @@ typedef std::set<groupdef_t *> groupdef_setp_t;
 struct nodeloc_t
 {
   pgroupdef_t gd;
-  pnodedef_list_t nl;
+  pnodedef_list_t ndl;
   pnodedef_t nd;
 
-  nodeloc_t(): gd(NULL), nl(NULL), nd(NULL)
+  nodeloc_t(): gd(NULL), ndl(NULL), nd(NULL)
   {
   }
   nodeloc_t(pgroupdef_t gd, 
             pnodedef_list_t nl,
-            pnodedef_t nd): gd(gd), nl(nl), nd(nd)
+            pnodedef_t nd): gd(gd), ndl(nl), nd(nd)
   {
   }
 };
@@ -162,14 +174,14 @@ private:
   qstring filename;
 
   /**
-  * @brief A lookup list for all node defs
-  */
-  nodedef_listp_t all_nodes;
-
-  /**
   * @brief Groups definition
   */
   groupdef_listp_t groups;
+
+  /**
+  * @brief A lookup table for all node defintions
+  */
+  nid2ndef_t all_nds;
 
   /**
   * @brief Private copy constructor
@@ -179,21 +191,26 @@ private:
   /**
   * @brief Parse a nodeset string
   */
-  void parse_nodeset(pgroupdef_t g, char *str);
+  bool parse_nodeset(
+      pgroupdef_t gd, 
+      char *grpstr);
+
+public:
 
   /**
   * @brief Method to initialize lookups
   */
   void initialize_lookups();
 
-public:
-
   /**
   * @brief Groups definition
   */
-  groupdef_listp_t *get_groups() { return &groups; }
+  inline groupdef_listp_t *get_groups() { return &groups; }
 
-  nodedef_listp_t  *get_nodes()  { return &all_nodes; }
+  /**
+  * @brief All the node defs
+  */
+  inline nid2ndef_t *get_nds() { return &all_nds; }
 
   /**
   * @brief Utility function to convert a string to the 'asize_t' type
@@ -202,9 +219,9 @@ public:
   asize_t str2asizet(const char *str);
 
   /**
-  * @ctor Constructor
+  * @ctor Default constructor
   */
-  groupman_t();
+  groupman_t() { }
 
   /**
   * @dtor Destructor
@@ -219,7 +236,7 @@ public:
   /**
   * @brief Add a new group definition
   */
-  pgroupdef_t add_group();
+  pgroupdef_t add_group(pgroupdef_t gd = NULL);
 
   /**
   * @brief Rewrites the structure from memory back to a file
@@ -230,7 +247,9 @@ public:
   /**
   * @brief Parse groups definition file
   */
-  bool parse(const char *filename);
+  bool parse(
+    const char *filename, 
+    bool init_cache = true);
 
   /**
   * @brief Find a node location by ID
@@ -246,5 +265,10 @@ public:
   * @brief Return the file name that was used to load this group manager
   */
   const char *get_source_file();
+
+  /**
+  * @brief Returns one node definition from the data structure
+  */
+  pnodedef_t get_first_nd();
 };
 #endif
