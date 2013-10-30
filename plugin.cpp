@@ -34,6 +34,10 @@ History
                                 - Added 'Load bbgroup' support
                                 - Added quick selection support (no UI for it though)
                                 - Added reload input file functionality
+10/29/2013 - eliasb             - Added 'Highlight similar nodes' placeholder code and UI
+                                - Refactored chooser population code into 'populate_chooser_lines()'
+                                - Speed optimization: generate flowchart once in the chooser and pass it to other functions								
+                                - Added find_and_highlight_nodes() to the graph								
 */
 
 #pragma warning(disable: 4018 4800)
@@ -72,11 +76,37 @@ enum gvrefresh_modes_e
 };
 
 //--------------------------------------------------------------------------
+#define DECL_CG \
+  colorgen_t cg; \
+  cg.L_INT = -15
+
+//--------------------------------------------------------------------------
 /**
 * @brief Graph data/context
 */
 struct gsgraphview_t
 {
+public:
+  /**
+  * @brief Currently selected node
+  */
+  int cur_node;
+
+  /**
+  * @brief Pointer to the graph viewer
+  */
+  graph_viewer_t  *gv;
+
+  /**
+  * @brief Pointer to the form hosting the graph viewer
+  */
+  TForm *form;
+
+  /**
+  * @brief Pointer to the associated group manager class
+  */
+  groupman_t *gm;
+
 private:
   struct menucbctx_t
   {
@@ -88,33 +118,24 @@ private:
 
   gnodemap_t node_map;
   pndl2id_t ndl2id;
-  ea_t func_ea;
+  qflow_chart_t *func_fc;
   gvrefresh_modes_e refresh_mode, current_graph_mode;
 
   gsgraphview_t   **parent_ref;
 
-  int idm_clear_sel;
-  int idm_clear_highlight;
+  int idm_clear_sel, idm_clear_highlight;
   int idm_set_sel_mode;
 
-  int idm_single_mode;
-  int idm_combined_mode;
+  int idm_single_mode, idm_combined_mode;
 
   int idm_test;
+  int idm_highlight_similar, idm_find_highlight;
 
   bool in_sel_mode;
 
   ncolormap_t     highlighted_nodes;
   ncolormap_t     selected_nodes;
 
-public:
-  int             cur_node;
-  graph_viewer_t  *gv;
-  TForm           *form;
-  groupman_t      *gm;
-
-
-private:
   /**
   * @brief Static menu item dispatcher
   */
@@ -159,6 +180,14 @@ private:
     {
       refresh(gvrfm_combined_mode);
     }
+    else if (menu_id == idm_highlight_similar)
+    {
+      highlight_similar_selection();
+    }
+    else if (menu_id == idm_find_highlight)
+    {
+      find_and_highlight_nodes();
+    }
     else if (menu_id == idm_test)
     {
       //
@@ -172,17 +201,35 @@ private:
       ncolormap_t::iterator it = selected_nodes.begin();
 
       nodeloc_t *loc = gm->find_nodeid_loc(it->first);
-      pnodedef_list_t ndl0 = loc->nl;
+      pnodedef_list_t ndl0 = loc->ndl;
       
-      //;!
-      for (;it != selected_nodes.end();++it)
+      //;! TODO
+      for (++it;it != selected_nodes.end();++it)
       {
+        loc = gm->find_nodeid_loc(it->first);
+        if (loc == NULL)
+          continue;
 
+        pnodedef_list_t ndl = loc->ndl;
+        if (ndl == ndl0)
+          continue;
+
+        // Move NDs to the first NDL
+        for (nodedef_list_t::iterator it = ndl->begin(); 
+             it != ndl->end();
+             ++it)
+        {
+          pnodedef_t nd = *it;
+          // Relocate ND to the first NDL
+          ndl0->push_back(nd);
+        }
+        loc->gd->remove_node_group(ndl);
+        if (loc->gd->nodegroups.empty())
+        {
+          // Remove the groupdef completely since it is now empty
+
+        }
       }
-
-      //loc0->nl
-      //gm->all_nodes
-      //loc0->nl
     }
   }
 
@@ -305,9 +352,24 @@ private:
 		  
 		      // Switch to the desired mode
           if (refresh_mode == gvrfm_single_mode)
-            func_to_mgraph(func_ea, mg, node_map);
+          {
+            func_to_mgraph(
+              BADADDR, 
+              mg, 
+              node_map, 
+              func_fc,
+              false);
+          }
           else if (refresh_mode == gvrfm_combined_mode)
-            fc_to_combined_mg(func_ea, gm, node_map, ndl2id, mg);
+          {
+            fc_to_combined_mg(
+              BADADDR, 
+              gm, 
+              node_map, 
+              ndl2id, 
+              mg, 
+              func_fc);
+          }
         }
         result = 1;
         break;
@@ -553,20 +615,9 @@ public:
   * @brief Creates and shows the graph
   */
   static gsgraphview_t *show_graph(
-    ea_t ea = BADADDR, 
+    qflow_chart_t *func_fc,
     groupman_t *gm = NULL)
   {
-    if (ea == BADADDR)
-      ea = get_screen_ea();
-
-    func_t *f = get_func(ea);
-
-    if (f == NULL)
-    {
-      msg("No function here!\n");
-      return NULL;
-    }
-
     // Loop twice: 
     // - (1) Create the graph and exit or close it if it was there 
     // - (2) Re create graph due to last step
@@ -579,11 +630,11 @@ public:
         // get a unique graph id
         netnode id;
         qstring title;
-        title.sprnt("$ Combined Graph of %a()", f->startEA);
+        title.sprnt("$ GS %s", func_fc->title.c_str());
         id.create(title.c_str());
 
         // Create a graph object
-        gsgraphview_t *gsgv = new gsgraphview_t(f->startEA);
+        gsgraphview_t *gsgv = new gsgraphview_t(func_fc);
 
         // Assign the groupmanager instance
         gsgv->gm = gm;
@@ -673,12 +724,12 @@ public:
   /**
   * @brief Constructor
   */
-  gsgraphview_t(ea_t func_ea): func_ea(func_ea)
+  gsgraphview_t(qflow_chart_t *func_fc): func_fc(func_fc)
   {
     cur_node = 0;
     gv = NULL;
     form = NULL;
-    refresh_mode = gvrfm_combined_mode;
+    refresh_mode = gvrfm_single_mode;//;!gvrfm_combined_mode;
     set_parentref(NULL);
     in_sel_mode = false;
     idm_set_sel_mode = -1;
@@ -698,18 +749,23 @@ public:
     // Add the context menu items
 	//
     add_menu("-");
-    idm_clear_sel        = add_menu("Clear selection", "D");
-    idm_clear_highlight  = add_menu("Clear highlighting", "H");
+    idm_clear_sel          = add_menu("Clear selection", "D");
+    idm_clear_highlight    = add_menu("Clear highlighting", "H");
 
     // GS view mode menu
     add_menu("-");
-    idm_single_mode      = add_menu("Switch to ungroupped view", "U");
-    idm_combined_mode    = add_menu("Switch to groupped view", "G");
+    idm_single_mode        = add_menu("Switch to ungroupped view", "U");
+    idm_combined_mode      = add_menu("Switch to groupped view", "G");
 
     add_menu("-");
-    idm_test             = add_menu("Test", "Q");
+    idm_test               = add_menu("Test", "Q");
+
+    add_menu("-");
+    idm_highlight_similar  = add_menu("Highlight similar nodes", "S");
+    idm_find_highlight     = add_menu("Find group", "F");
 
     // Set initial selection mode
+    add_menu("-");
     set_sel_mode(in_sel_mode);
   }
 
@@ -735,6 +791,61 @@ public:
       refresh(gvrfm_soft);
     }
   }
+
+  /**
+  * @brief Highlight nodes similar to the selection
+  */
+  void highlight_similar_selection()
+  {
+    if (selected_nodes.empty())
+      return;
+
+    //TODO: highlight the similar selection
+  }
+
+  /**
+  * @brief 
+  */
+  void find_and_highlight_nodes()
+  {
+    static char last_pattern[MAXSTR] = {0};
+
+    const char *pattern = askstr(HIST_SRCH, last_pattern, "Please enter search string");
+    if (pattern == NULL)
+      return;
+
+    // Remember last search
+    qstrncpy(
+        last_pattern, 
+        pattern, 
+        sizeof(last_pattern));
+
+    DECL_CG;
+    nodegroup_listp_t *nodegroups = NULL;
+
+    // Walk all the groups
+    groupdef_listp_t *groups = gm->get_groups();
+    for (groupdef_listp_t::iterator it=groups->begin();
+         it != groups->end();
+         ++it)
+    {
+      groupdef_t *gd = *it;
+      if (    stristr(gd->groupname.c_str(), pattern) != NULL
+           || stristr(gd->id.c_str(), pattern) != NULL )
+      {
+        nodegroups = &gd->nodegroups;
+        set_highlighted_nodes(nodegroups, cg);
+      }
+    }
+    // Refresh graph if at least there is one match
+    if (nodegroups != NULL)
+    {
+      refresh(gvrfm_soft);
+      jump_to_node(gv, (*(*nodegroups->begin())->begin())->nid);
+    }
+  }
+
+
 };
 gsgraphview_t::idmenucbtx_t gsgraphview_t::menu_ids;
 
@@ -773,7 +884,6 @@ public:
     ndl = NULL;
   }
 };
-
 typedef qvector<gschooser_line_t> chooser_lines_vec_t;
 
 //--------------------------------------------------------------------------
@@ -790,6 +900,8 @@ private:
   gsgraphview_t *gsgv;
   groupman_t *gm;
   qstring last_loaded_file;
+
+  qflow_chart_t func_fc;
 
   static uint32 idaapi s_sizer(void *obj)
   {
@@ -955,10 +1067,6 @@ private:
     load_file_show_graph(filename);
   }
 
-#define DECL_CG \
-  colorgen_t cg; \
-  cg.L_INT = -15
-
   /**
   * @brief Callback that handles ENTER or double clicks on a chooser node
   */
@@ -1050,10 +1158,12 @@ private:
   {
     if (chi.popup_names != NULL)
       qfree((void *)chi.popup_names);
-    
+
+    // Delete the group manager
     delete gm;
     gm = NULL;
 
+    // Close the associated graph
     close_graph();
     delete_singleton();
   }
@@ -1079,17 +1189,12 @@ private:
   */
   bool load_file_show_graph(const char *filename)
   {
+    // Load the input file
     if (!load_file(filename))
       return false;
 
     // Show the graph
-    nodedef_listp_t *nodes = gm->get_nodes();
-    if (nodes->empty())
-      return false;
-
-    nodedef_t *nd = *(nodes->begin());
-
-    gsgv = gsgraphview_t::show_graph(nd->start, gm);
+    gsgv = gsgraphview_t::show_graph(&func_fc, gm);
     if (gsgv == NULL)
       return false;
 
@@ -1097,7 +1202,52 @@ private:
 
     // Remember last loaded file
     last_loaded_file = filename;
+
     return true;
+  }
+
+  /**
+  * @brief Populate chooser lines
+  */
+  void populate_chooser_lines()
+  {
+    // TODO: do not delete previous lines
+    ch_nodes.clear();
+
+    // Add the first-level node = bbgroup file
+    gschooser_line_t *line = &ch_nodes.push_back();
+    line->type = chlt_gm;
+    line->gm = gm;
+
+    for (groupdef_listp_t::iterator it=gm->get_groups()->begin();
+         it != gm->get_groups()->end();
+         ++it)
+    {
+      groupdef_t &gd = **it;
+
+      // Add the second-level node = a set of group defs
+      line = &ch_nodes.push_back();
+      nodegroup_listp_t &ngl = gd.nodegroups;
+      line->type = chlt_gd;
+      line->gd   = &gd;
+      line->gm   = gm;
+      line->ngl  = &ngl;
+
+      // Add each nodedef list within each node group
+      for (nodegroup_listp_t::iterator it = ngl.begin();
+        it != ngl.end();
+        ++it)
+      {
+        pnodedef_list_t nl = *it;
+        // Add the third-level node = nodedef
+        line = &ch_nodes.push_back();
+        line->type = chlt_nl;
+        line->ndl  = nl;
+        line->ngl  = &ngl;
+        line->gm   = gm;
+        line->gd   = &gd;
+      }
+    }
   }
 
   /**
@@ -1110,6 +1260,7 @@ private:
     //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\f1.bbgroup";
     //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\main.bbgroup";
     fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\doit.bbgroup";
+    //fn = "P:\\Tools\\idadev\\plugins\\workfile-1.bbgroup";
     load_file_show_graph(fn);
 #endif
   }
@@ -1202,50 +1353,45 @@ public:
     gm = new groupman_t();
 
     // Load a file and parse it
-    if (!gm->parse(filename))
+    // (don't init cache yet because file may be optimized)
+    if (!gm->parse(filename, false))
     {
       msg("error: failed to parse group file '%s'\n", filename);
       delete gm;
       return false;
     }
 
-    // TODO: do not delete previous lines
-    ch_nodes.clear();
-
-    // Add the first-level node = bbgroup file
-    gschooser_line_t *line = &ch_nodes.push_back();
-    line->type = chlt_gm;
-    line->gm = gm;
-
-    for (groupdef_listp_t::iterator it=gm->get_groups()->begin();
-         it != gm->get_groups()->end();
-         ++it)
+    // Get an address from the parsed file
+    nodedef_t *nd = gm->get_first_nd();
+    if (nd == NULL)
     {
-      groupdef_t &gd = **it;
-
-      // Add the second-level node = a set of group defs
-      line = &ch_nodes.push_back();
-      nodegroup_listp_t &ngl = gd.nodegroups;
-      line->type = chlt_gd;
-      line->gd   = &gd;
-      line->gm   = gm;
-      line->ngl  = &ngl;
-
-      // Add each nodedef list within each node group
-      for (nodegroup_listp_t::iterator it = ngl.begin();
-           it != ngl.end();
-           ++it)
-      {
-        pnodedef_list_t nl = *it;
-        // Add the third-level node = nodedef
-        line = &ch_nodes.push_back();
-        line->type = chlt_nl;
-        line->ndl  = nl;
-        line->ngl  = &ngl;
-        line->gm   = gm;
-        line->gd   = &gd;
-      }
+      msg("Invalid input file! No addresses defined\n");
+      return false;
     }
+
+    // Get related function
+    func_t *f = get_func(nd->start);
+    if (f == NULL)
+    {
+      msg("Input file does not related to a defined function!\n");
+      return false;
+    }
+
+    // Build the flowchart once
+    if (!get_func_flowchart(f->startEA, func_fc))
+    {
+      msg("Could not build function flow chart at %a\n", f->startEA);
+      return false;
+    }
+
+    // De-optimize the input file
+    if (sanitize_groupman(BADADDR, gm, &func_fc))
+    {
+      // Now initialize the cache
+      gm->initialize_lookups();
+    }
+
+    populate_chooser_lines();
     return true;
   }
 
@@ -1261,7 +1407,6 @@ public:
     set_dock_pos(STR_GS_PANEL, STR_OUTWIN_TITLE, DP_RIGHT);
     set_dock_pos(STR_GS_VIEW, STR_IDAVIEWA_TITLE, DP_INSIDE);
   }
-
 };
 gschooser_t *gschooser_t::singleton = NULL;
 
