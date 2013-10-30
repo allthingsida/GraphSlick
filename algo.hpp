@@ -19,6 +19,8 @@ History
 10/28/2013 - eliasb     - add 'hint' value to the combined blocks
                         - show the 'groupname' or 'id' as text for combined nodes
 10/29/2013 - eliasb     - added sanity checks to fc_to_combined_mg()
+                        - functions don't compute flowchart each time now. user can pass a flowchart
+                        - added sanitize_groupman() to allow loaded incomplete bbgroup file						
 --------------------------------------------------------------------------*/
 
 
@@ -123,7 +125,7 @@ class fc_to_combined_mg
   * @brief Build the combined mutable graph from the groupman and a flowchart
   */
   bool build(
-    qflow_chart_t &fc,
+    qflow_chart_t *fc,
     groupman_t *gm,
     gnodemap_t &node_map,
     pndl2id_t &ndl2id,
@@ -133,7 +135,7 @@ class fc_to_combined_mg
     // in the other helper functions
     this->gm = gm;
     this->node_map = &node_map;
-    this->fc = &fc;
+    this->fc = fc;
   	this->ndl2id = &ndl2id;
 
     // Compute the total size of nodes needed for the combined graph
@@ -151,7 +153,7 @@ class fc_to_combined_mg
     mg->resize(node_count);
 
     // Build the combined graph
-    int snodes_count = fc.size();
+    int snodes_count = fc->size();
     for (int n=0; n < snodes_count; n++)
     {
       // Figure out the combined node ID
@@ -160,12 +162,12 @@ class fc_to_combined_mg
         return false;
 
       // Build the edges
-      for (int isucc=0, succ_sz=fc.nsucc(n); 
+      for (int isucc=0, succ_sz=fc->nsucc(n); 
            isucc < succ_sz; 
            isucc++)
       {
         // Get the successor node
-        int nsucc = fc.succ(n, isucc);
+        int nsucc = fc->succ(n, isucc);
 
         // This node belongs to the same NDL?
         int succ_ndlid = get_ndlid(nsucc);
@@ -183,31 +185,51 @@ class fc_to_combined_mg
     }
     return true;
   }
+
 public:
   /**
   * @brief Operator to call the class as a function
   */
   fc_to_combined_mg(
-      ea_t ea,
+      ea_t func_ea,
       groupman_t *gm,
       gnodemap_t &node_map,
       pndl2id_t &ndl2id,
-      mutable_graph_t *mg): show_nids_only(false)
+      mutable_graph_t *mg,
+      qflow_chart_t *fc = NULL): show_nids_only(false)
   {
-    // Build function's flowchart
-    qflow_chart_t fc;
-    if (!get_func_flowchart(ea, fc))
-      return;
+    // Build function's flowchart (if needed)
+    qflow_chart_t _fc;
+    if (fc == NULL)
+    {
+      fc = &_fc;
+      if (!get_func_flowchart(func_ea, *fc))
+        return;
+    }
 
     build(fc, gm, node_map, ndl2id, mg);
   }
 };
 
 //--------------------------------------------------------------------------
+/**
+* @brief Build a mutable graph from a function address
+*/
 bool func_to_mgraph(
-    ea_t ea,
+    ea_t func_ea,
     mutable_graph_t *mg,
     gnodemap_t &node_map,
-    bool append_node_id = false);
+    bool append_node_id = false,
+    qflow_chart_t *fc = NULL);
+
+//--------------------------------------------------------------------------
+/**
+* @brief Sanitize the contents of the groupman versus the flowchart 
+         of the function
+*/
+bool sanitize_groupman(
+  ea_t func_ea,
+  groupman_t *gm,
+  qflow_chart_t *fc = NULL);
 
 #endif
