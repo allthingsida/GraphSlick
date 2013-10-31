@@ -15,6 +15,8 @@ History
                                 - added get_first_nd()
                                 - got rid of the 'all_ndls' structure and added nid2nd structure
 10/30/2013 - eliasb             - renamed classes to less confusing names: supergroup, groups, grouplist, nodedef
+10/31/2013 - eliasb             - added get_first_node() helper function to nodegroup_t/nodegroup_list_t
+                                - renamed png2nid_t to ng2nid_t
 --------------------------------------------------------------------------*/
 
 #include "groupman.h"
@@ -50,6 +52,16 @@ void nodegroup_list_t::free_nodegroup(bool free_nodes)
 }
 
 //--------------------------------------------------------------------------
+pnodedef_t nodegroup_list_t::get_first_node()
+{
+  if (empty())
+    return NULL;
+
+  pnodegroup_t ng = *begin();
+  return ng->get_first_node();
+}
+
+//--------------------------------------------------------------------------
 //--  NODEGROUP CLASS  -----------------------------------------------------
 //--------------------------------------------------------------------------
 
@@ -71,6 +83,15 @@ pnodedef_t nodegroup_t::add_node(pnodedef_t nd)
 
   push_back(nd);
   return nd;
+}
+
+//--------------------------------------------------------------------------
+pnodedef_t nodegroup_t::get_first_node()
+{
+  if (empty())
+    return NULL;
+  else
+    return *begin();
 }
 
 //--------------------------------------------------------------------------

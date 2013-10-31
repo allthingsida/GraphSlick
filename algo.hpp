@@ -41,7 +41,7 @@ History
 class fc_to_combined_mg
 {
   // Create a mapping between single node ids and the nodedef list they belong to
-  png2nid_t *group2id;
+  ng2nid_t *group2id;
 
   gnodemap_t *node_map;
   groupman_t *gm;
@@ -61,7 +61,7 @@ class fc_to_combined_mg
       return -1;
 
     // Does this node have a group yet? (ndl)
-    png2nid_t::iterator it = group2id->find(loc->ng);
+    ng2nid_t::iterator it = group2id->find(loc->ng);
     if (it == group2id->end())
     {
       // Assign an auto-incr id
@@ -128,7 +128,7 @@ class fc_to_combined_mg
     qflow_chart_t *fc,
     groupman_t *gm,
     gnodemap_t &node_map,
-    png2nid_t &group2id,
+    ng2nid_t &group2id,
     mutable_graph_t *mg)
   {
     // Take a reference to the local variables so they are used
@@ -194,7 +194,7 @@ public:
       ea_t func_ea,
       groupman_t *gm,
       gnodemap_t &node_map,
-      png2nid_t &group2id,
+      ng2nid_t &group2id,
       mutable_graph_t *mg,
       qflow_chart_t *fc = NULL): show_nids_only(false)
   {

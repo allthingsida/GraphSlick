@@ -39,6 +39,10 @@ class nodegroup_t: public qlist<pnodedef_t>
 public:
   void free_nodes();
   pnodedef_t add_node(pnodedef_t nd = NULL);
+  /**
+  * @brief Return the first node definition from this group
+  */
+  pnodedef_t get_first_node();
 };
 typedef nodegroup_t *pnodegroup_t;
 
@@ -46,8 +50,17 @@ typedef nodegroup_t *pnodegroup_t;
 /**
 * @brief Maps a node group to a single node id 
 */
-typedef std::map<pnodegroup_t, int> png2nid_t;
+class ng2nid_t: public std::map<pnodegroup_t, int>
+{
+public:
+  inline int get_ng_id(pnodegroup_t ng)
+  {
+    iterator it = find(ng);
+    return it == end() ? -1 : it->second;
+  }
+};
 
+//--------------------------------------------------------------------------
 /**
 * @brief Maps a node id to node definitions
 */
@@ -61,6 +74,10 @@ class nodegroup_list_t: public qlist<pnodegroup_t>
 {
 public:
   void free_nodegroup(bool free_nodes);
+  /**
+  * @brief Return the first node definition from the first group in the group list
+  */
+  pnodedef_t get_first_node();
 };
 typedef nodegroup_list_t *pnodegroup_list_t;
 
