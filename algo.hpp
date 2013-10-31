@@ -41,7 +41,7 @@ History
 class fc_to_combined_mg
 {
   // Create a mapping between single node ids and the nodedef list they belong to
-  pndl2id_t *ndl2id;
+  png2nid_t *group2id;
 
   gnodemap_t *node_map;
   groupman_t *gm;
@@ -51,9 +51,9 @@ class fc_to_combined_mg
   /**
   * @brief Create and return a groupped node ID
   */
-  int get_ndlid(int n)
+  int get_groupid(int n)
   {
-    int ndl_id;
+    int group_id;
 
     // Find how this single node is defined in the group manager
     nodeloc_t *loc = gm->find_nodeid_loc(n);
@@ -61,19 +61,19 @@ class fc_to_combined_mg
       return -1;
 
     // Does this node have a group yet? (ndl)
-    pndl2id_t::iterator it = ndl2id->find(loc->ndl);
-    if (it == ndl2id->end())
+    png2nid_t::iterator it = group2id->find(loc->ng);
+    if (it == group2id->end())
     {
       // Assign an auto-incr id
-      ndl_id = ndl2id->size();  
-      (*ndl2id)[loc->ndl] = ndl_id;
+      group_id = group2id->size();  
+      (*group2id)[loc->ng] = group_id;
 
-      // Initial text for this ndl is the current single node id
+      // Initialize this group's node id
       gnode_t gn;
-      gn.id = ndl_id;
-      size_t t = loc->ndl->size();
-      for (nodedef_list_t::iterator it=loc->ndl->begin();
-           it != loc->ndl->end();
+      gn.id = group_id;
+      size_t t = loc->ng->size();
+      for (nodegroup_t::iterator it=loc->ng->begin();
+           it != loc->ng->end();
            ++it)
       {
         if (show_nids_only)
@@ -95,13 +95,13 @@ class fc_to_combined_mg
       if (!show_nids_only)
       {
         // Are there any groupped nodes?
-        if (loc->ndl->size() > 1)
+        if (loc->ng->size() > 1)
         {
           // Display the group name or the group id
-          if (!loc->gd->groupname.empty())
-            gn.text = loc->gd->groupname;
+          if (!loc->sg->name.empty())
+            gn.text = loc->sg->name;
           else
-            gn.text = loc->gd->id;
+            gn.text = loc->sg->id;
         }
         else
         {
@@ -110,15 +110,15 @@ class fc_to_combined_mg
       }
 
       // Cache the node data
-      (*node_map)[ndl_id] = gn;
+      (*node_map)[group_id] = gn;
     }
     else
     {
-      // Grab the ndl id
-      ndl_id = it->second;
+      // Grab the group id
+      group_id = it->second;
     }
 
-    return ndl_id;
+    return group_id;
   }
 
   /**
@@ -128,7 +128,7 @@ class fc_to_combined_mg
     qflow_chart_t *fc,
     groupman_t *gm,
     gnodemap_t &node_map,
-    pndl2id_t &ndl2id,
+    png2nid_t &group2id,
     mutable_graph_t *mg)
   {
     // Take a reference to the local variables so they are used
@@ -136,17 +136,17 @@ class fc_to_combined_mg
     this->gm = gm;
     this->node_map = &node_map;
     this->fc = fc;
-  	this->ndl2id = &ndl2id;
+  	this->group2id = &group2id;
 
     // Compute the total size of nodes needed for the combined graph
     // The size is the total count of node def lists in each group def
     size_t node_count = 0;
-    for (groupdef_listp_t::iterator it=gm->get_groups()->begin();
-         it != gm->get_groups()->end();
+    for (supergroup_listp_t::iterator it=gm->get_supergroups()->begin();
+         it != gm->get_supergroups()->end();
          ++it)
     {
-      groupdef_t &gd = **it;
-      node_count += gd.nodegroups.size();
+      psupergroup_t sg = *it;
+      node_count += sg->groups.size();
     }
 
     // Resize the graph
@@ -157,8 +157,8 @@ class fc_to_combined_mg
     for (int n=0; n < snodes_count; n++)
     {
       // Figure out the combined node ID
-      int ndl_id = get_ndlid(n);
-      if (ndl_id == -1)
+      int group_id = get_groupid(n);
+      if (group_id == -1)
         return false;
 
       // Build the edges
@@ -169,18 +169,18 @@ class fc_to_combined_mg
         // Get the successor node
         int nsucc = fc->succ(n, isucc);
 
-        // This node belongs to the same NDL?
-        int succ_ndlid = get_ndlid(nsucc);
-        if (succ_ndlid == -1)
+        // This node belongs to the same group?
+        int succ_grid = get_groupid(nsucc);
+        if (succ_grid == -1)
           return false;
 
-        if (succ_ndlid == ndl_id)
+        if (succ_grid == group_id)
         {
           // Do nothing, consider as one node
           continue;
         }
         // Add an edge
-        mg->add_edge(ndl_id, succ_ndlid, NULL);
+        mg->add_edge(group_id, succ_grid, NULL);
       }
     }
     return true;
@@ -194,7 +194,7 @@ public:
       ea_t func_ea,
       groupman_t *gm,
       gnodemap_t &node_map,
-      pndl2id_t &ndl2id,
+      png2nid_t &group2id,
       mutable_graph_t *mg,
       qflow_chart_t *fc = NULL): show_nids_only(false)
   {
@@ -207,7 +207,7 @@ public:
         return;
     }
 
-    build(fc, gm, node_map, ndl2id, mg);
+    build(fc, gm, node_map, group2id, mg);
   }
 };
 

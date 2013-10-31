@@ -9,7 +9,22 @@ History
 10/23/2013 - eliasb   - First version, it comes from refactored 
                         code from the plugin module
 10/25/2013 - eliasb   - Added jump_to_node()
+10/30/2013 - eliasb   - moved str2asizet() and skip_spaces() from other modules
 --------------------------------------------------------------------------*/
+
+//--------------------------------------------------------------------------
+char *skip_spaces(char *p)
+{
+  return skipSpaces(p);
+}
+
+//--------------------------------------------------------------------------
+asize_t str2asizet(const char *str)
+{
+  ea_t v;
+  qsscanf(str, "%a", &v);
+  return (asize_t)v;
+}
 
 //--------------------------------------------------------------------------
 /**

@@ -68,6 +68,22 @@ bool get_func_flowchart(
     qflow_chart_t &qf);
 
 //--------------------------------------------------------------------------
+/**
+* @brief Focuses and jumps to the given node id in the graph viewer
+*/
 void jump_to_node(graph_viewer_t *gv, int nid);
+
+//--------------------------------------------------------------------------
+/**
+* @brief Utility function to convert a string to the 'asize_t' type
+          It works based on the EA64 define
+*/
+asize_t str2asizet(const char *str);
+
+//--------------------------------------------------------------------------
+/**
+* @brief Skips white spaces
+*/
+char *skip_spaces(char *p);
 
 #endif

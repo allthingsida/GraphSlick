@@ -22,21 +22,26 @@ bool func_to_mgraph(
   mg->resize(nodes_count);
 
   // Build the node cache and edges
-  for (int n=0; n < nodes_count; n++)
+  for (int nid=0; nid < nodes_count; nid++)
   {
-    qbasic_block_t &block = fc->blocks[n];
-    gnode_t *nc = node_map.add(n);
+    qbasic_block_t &block = fc->blocks[nid];
+    gnode_t *nc = node_map.add(nid);
+
+    // Append node ID to the output
+    if (append_node_id)
+      nc->text.sprnt("ID(%d)\n", nid);
 
     // Generate disassembly text
-    if (append_node_id)
-      nc->text.sprnt("ID(%d)\n", n);
-    get_disasm_text(block.startEA, block.endEA, &nc->text);
+    get_disasm_text(
+        block.startEA, 
+        block.endEA, 
+        &nc->text);
 
     // Build edges
-    for (int isucc=0, succ_sz=fc->nsucc(n); isucc < succ_sz; isucc++)
+    for (int nid_succ=0, succ_sz=fc->nsucc(nid); nid_succ < succ_sz; nid_succ++)
     {
-      int nsucc = fc->succ(n, isucc);
-      mg->add_edge(n, nsucc, NULL);
+      int nsucc = fc->succ(nid, nid_succ);
+      mg->add_edge(nid, nsucc, NULL);
     }
   }
   return true;
@@ -58,7 +63,7 @@ bool sanitize_groupman(
   }
 
   // Create a group for all potentially missing nodes
-  pgroupdef_t missing_gd = new groupdef_t();
+  psupergroup_t missing_sg = new supergroup_t();
 
   int nodes_count = fc->size();
 
@@ -80,21 +85,23 @@ bool sanitize_groupman(
     nd->start = block.startEA;
     nd->end = block.endEA;
 
-    // Add the ND to its own NDL
-    pnodedef_list_t ndl = missing_gd->add_node_group();
-    ndl->add_nodedef(nd);
+    // Add the node to its own group
+    pnodegroup_t ng = missing_sg->add_nodegroup();
+    ng->add_node(nd);
   }
 
-  if (missing_gd->group_count() == 0)
+  if (missing_sg->gcount() == 0)
   {
     // No orphan nodes where found, get rid of the group
-    delete missing_gd;
+    delete missing_sg;
   }
   else
   {
     // Found at least one orphan node, add it to the groupman
-    missing_gd->groupname = missing_gd->id = "orphan_nodes";
-    gm->add_group(missing_gd);
+    missing_sg->name = missing_sg->id = "orphan_nodes";
+    // This is a synthetic group
+    missing_sg->is_synthetic = true;
+    gm->add_supergroup(missing_sg);
   }
 
   return true;

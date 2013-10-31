@@ -32,63 +32,69 @@ typedef nodedef_t *pnodedef_t;
 
 //--------------------------------------------------------------------------
 /**
-* @brief A list of nodes: makes a group
+* @brief A list of nodes making up a group
 */
-class nodedef_list_t: public qlist<pnodedef_t>
+class nodegroup_t: public qlist<pnodedef_t>
 {
 public:
   void free_nodes();
-  pnodedef_t add_nodedef(pnodedef_t nd);
+  pnodedef_t add_node(pnodedef_t nd = NULL);
 };
-typedef nodedef_list_t *pnodedef_list_t;
+typedef nodegroup_t *pnodegroup_t;
 
 //--------------------------------------------------------------------------
 /**
-* @brief Used to map a pNDL to an id 
-         Normally a node ID representing a group of nodes
+* @brief Maps a node group to a single node id 
 */
-typedef std::map<pnodedef_list_t, int> pndl2id_t;
+typedef std::map<pnodegroup_t, int> png2nid_t;
 
 /**
-* @brief Map node ids to node definitions
+* @brief Maps a node id to node definitions
 */
 typedef std::map<int, pnodedef_t> nid2ndef_t;
 
 //--------------------------------------------------------------------------
 /**
-* @brief A list of node definition pointers
+* @brief nodegroups type is a list of nodegroup type
 */
-typedef qlist<pnodedef_t> nodedef_listp_t;
-
-//--------------------------------------------------------------------------
-/**
-* @brief A list of node groups
-*/
-class nodegroup_listp_t: public qlist<pnodedef_list_t>
+class nodegroup_list_t: public qlist<pnodegroup_t>
 {
 public:
-  void free_ndls(bool free_nodes);
+  void free_nodegroup(bool free_nodes);
 };
+typedef nodegroup_list_t *pnodegroup_list_t;
 
 //--------------------------------------------------------------------------
 /**
-* @brief Group definition
+* @brief A super group is a groups container
 */
-struct groupdef_t
+struct supergroup_t
 {
+  /**
+  * @brief Super group ID
+  */
   qstring id;
-  qstring groupname;
-  bool selected;
-  bool groupped;
-  asize_t inst_count;
-  asize_t match_count;
-  nodegroup_listp_t nodegroups;
-
-  groupdef_t();
-  ~groupdef_t();
 
   /**
-  * @brief Properly clear out all the nodeset in the group
+  * @brief Super group name
+  */
+  qstring name;
+
+  /**
+  * @brief A synthetic group that was not loaded but generated on the fly
+  */
+  bool is_synthetic;
+
+  /**
+  * @brief List of groups in the super group
+  */
+  nodegroup_list_t groups;
+
+  supergroup_t();
+  ~supergroup_t();
+
+  /**
+  * @brief Properly clear out all the contained groups
   */
   void clear();
 
@@ -96,65 +102,43 @@ struct groupdef_t
   * @brief Add a new node group
   * @return Node group
   */
-  pnodedef_list_t add_node_group();
+  pnodegroup_t add_nodegroup(pnodegroup_t ng = NULL);
 
   /**
-  * @brief TODO:
+  * @brief TODO: check me
   */
-  void remove_node_group(pnodedef_list_t ndl);
+  bool remove_nodegroup(pnodegroup_t ng);
 
   /**
-  * @brief Return the count of defined NDLs
+  * @brief Return the count of defined groups
   */
-  inline size_t group_count() { return nodegroups.size(); }
-
+  inline size_t gcount() { return groups.size(); }
 };
-typedef groupdef_t *pgroupdef_t;
-typedef qlist<pgroupdef_t>    groupdef_listp_t;
-typedef std::set<groupdef_t *> groupdef_setp_t;
+
+//--------------------------------------------------------------------------
+typedef supergroup_t *psupergroup_t;
+
+//--------------------------------------------------------------------------
+typedef qlist<psupergroup_t> supergroup_listp_t;
+typedef supergroup_listp_t *psupergroup_listp_t;
 
 //--------------------------------------------------------------------------
 /**
-* @brief 
+* @brief Node location class
 */
 struct nodeloc_t
 {
-  pgroupdef_t gd;
-  pnodedef_list_t ndl;
-  pnodedef_t nd;
+  psupergroup_t sg;
+  pnodegroup_t  ng;
+  pnodedef_t    nd;
 
-  nodeloc_t(): gd(NULL), ndl(NULL), nd(NULL)
+  nodeloc_t(): sg(NULL), ng(NULL), nd(NULL)
   {
   }
-  nodeloc_t(pgroupdef_t gd, 
-            pnodedef_list_t nl,
-            pnodedef_t nd): gd(gd), ndl(nl), nd(nd)
+  nodeloc_t(psupergroup_t sg, 
+            pnodegroup_t ng,
+            pnodedef_t nd): sg(sg), ng(ng), nd(nd)
   {
-  }
-};
-
-//--------------------------------------------------------------------------
-/**
-* @brief Node network class
-*/
-class groupnet_t
-{
-  typedef std::map<pgroupdef_t, groupdef_setp_t *> groupnet_map_t;
-  groupnet_map_t network;
-public:
-  /**
-  * @brief Clear the network
-  */
-  void clear();
-
-  /**
-  * @brief Return the successor group def set
-  */
-  groupdef_setp_t *get_succs(pgroupdef_t key);
-
-  ~groupnet_t()
-  {
-    clear();
   }
 };
 
@@ -168,15 +152,18 @@ private:
   /**
   * @brief NodeId node location lookup map
   */
-  typedef std::map<int, nodeloc_t> node_nodeloc_map_t;
-  node_nodeloc_map_t node_to_loc;
+  typedef std::map<int, nodeloc_t> nid2nloc_map_t;
+  nid2nloc_map_t nid2loc;
 
+  /**
+  * @brief File name that was last loaded
+  */
   qstring filename;
 
   /**
-  * @brief Groups definition
+  * @brief Super groups definition
   */
-  groupdef_listp_t groups;
+  supergroup_listp_t sgroups;
 
   /**
   * @brief A lookup table for all node defintions
@@ -192,7 +179,7 @@ private:
   * @brief Parse a nodeset string
   */
   bool parse_nodeset(
-      pgroupdef_t gd, 
+      psupergroup_t sg, 
       char *grpstr);
 
 public:
@@ -203,20 +190,14 @@ public:
   void initialize_lookups();
 
   /**
-  * @brief Groups definition
+  * @brief Return the super groups
   */
-  inline groupdef_listp_t *get_groups() { return &groups; }
+  inline psupergroup_listp_t get_supergroups() { return &sgroups; }
 
   /**
   * @brief All the node defs
   */
   inline nid2ndef_t *get_nds() { return &all_nds; }
-
-  /**
-  * @brief Utility function to convert a string to the 'asize_t' type
-           It works based on the EA64 define
-  */
-  asize_t str2asizet(const char *str);
 
   /**
   * @ctor Default constructor
@@ -234,9 +215,9 @@ public:
   void clear();
 
   /**
-  * @brief Add a new group definition
+  * @brief Add a new super group
   */
-  pgroupdef_t add_group(pgroupdef_t gd = NULL);
+  psupergroup_t add_supergroup(psupergroup_t sg = NULL);
 
   /**
   * @brief Rewrites the structure from memory back to a file
