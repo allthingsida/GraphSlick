@@ -38,6 +38,8 @@ History
                                 - Refactored chooser population code into 'populate_chooser_lines()'
                                 - Speed optimization: generate flowchart once in the chooser and pass it to other functions								
                                 - Added find_and_highlight_nodes() to the graph								
+10/30/2013 - eliasb             - Adapted to new class names
+                                - Added to-do placeholder for parameters that could be passed as options
 */
 
 #pragma warning(disable: 4018 4800)

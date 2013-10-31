@@ -14,6 +14,7 @@ History
 10/29/2013 - eliasb             - skip trailing spaces while parsing
                                 - added get_first_nd()
                                 - got rid of the 'all_ndls' structure and added nid2nd structure
+10/30/2013 - eliasb             - renamed classes to less confusing names: supergroup, groups, grouplist, nodedef
 --------------------------------------------------------------------------*/
 
 #include "groupman.h"
