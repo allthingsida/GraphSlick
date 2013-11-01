@@ -10,6 +10,7 @@ History
                         code from the plugin module
 10/25/2013 - eliasb   - Added jump_to_node()
 10/30/2013 - eliasb   - moved str2asizet() and skip_spaces() from other modules
+10/31/2013 - eliasb   - added 'is_ida_gui()'
 --------------------------------------------------------------------------*/
 
 //--------------------------------------------------------------------------
@@ -91,4 +92,10 @@ void jump_to_node(graph_viewer_t *gv, int nid)
   new_pl->node = nid;
   jumpto(gv, new_pl, x, y);
   delete new_pl;
+}
+
+//--------------------------------------------------------------------------
+bool is_ida_gui()
+{
+  return callui(ui_get_hwnd).vptr != NULL || is_idaq();
 }

@@ -78,6 +78,11 @@ public:
   * @brief Return the first node definition from the first group in the group list
   */
   pnodedef_t get_first_node();
+
+  /**
+  * @brief Return the first nodegroup
+  */
+  pnodegroup_t get_first_ng();
 };
 typedef nodegroup_list_t *pnodegroup_list_t;
 
@@ -130,6 +135,16 @@ struct supergroup_t
   * @brief Return the count of defined groups
   */
   inline size_t gcount() { return groups.size(); }
+
+  /**
+  * @brief Return the first node definition from the first group in the group list
+  */
+  pnodedef_t get_first_node();
+
+  /**
+  * @brief Return the first nodegroup
+  */
+  pnodegroup_t get_first_ng();
 };
 
 //--------------------------------------------------------------------------

@@ -17,6 +17,7 @@ History
 10/30/2013 - eliasb             - renamed classes to less confusing names: supergroup, groups, grouplist, nodedef
 10/31/2013 - eliasb             - added get_first_node() helper function to nodegroup_t/nodegroup_list_t
                                 - renamed png2nid_t to ng2nid_t
+                                - added nodegroup_list_t::get_first_ng()								
 --------------------------------------------------------------------------*/
 
 #include "groupman.h"
@@ -59,6 +60,15 @@ pnodedef_t nodegroup_list_t::get_first_node()
 
   pnodegroup_t ng = *begin();
   return ng->get_first_node();
+}
+
+//--------------------------------------------------------------------------
+pnodegroup_t nodegroup_list_t::get_first_ng()
+{
+  if (empty())
+    return NULL;
+  else
+    return *begin();
 }
 
 //--------------------------------------------------------------------------
@@ -122,6 +132,32 @@ pnodegroup_t supergroup_t::add_nodegroup(pnodegroup_t ng)
 //--------------------------------------------------------------------------
 //--  GROUP MANAGER CLASS  -------------------------------------------------
 //--------------------------------------------------------------------------
+
+//--------------------------------------------------------------------------
+nodeloc_t *groupman_t::find_nodeid_loc(int nid)
+{
+  nid2nloc_map_t::iterator it = nid2loc.find(nid);
+  if (it == nid2loc.end())
+    return NULL;
+  else
+    return &it->second;
+}
+
+//--------------------------------------------------------------------------
+nodeloc_t *groupman_t::find_node_loc(ea_t ea)
+{
+  //HINT: use a map with lower_bound() if this function is to be called
+  //      frequently and speed is of importance
+  for (nid2ndef_t::iterator it = all_nds.begin();
+    it != all_nds.end();
+    ++it)
+  {
+    pnodedef_t nd = it->second;
+    if (nd->start >= ea && ea < nd->end)
+      return find_nodeid_loc(nd->nid);
+  }
+  return NULL;
+}
 
 //--------------------------------------------------------------------------
 bool groupman_t::parse_nodeset(
@@ -382,29 +418,16 @@ bool supergroup_t::remove_nodegroup(pnodegroup_t ng)
 }
 
 //--------------------------------------------------------------------------
-nodeloc_t *groupman_t::find_nodeid_loc(int nid)
+pnodedef_t supergroup_t::get_first_node()
 {
-  nid2nloc_map_t::iterator it = nid2loc.find(nid);
-  if (it == nid2loc.end())
-    return NULL;
-  else
-    return &it->second;
+  pnodegroup_t ng = get_first_ng();
+  return ng->get_first_node();
 }
 
 //--------------------------------------------------------------------------
-nodeloc_t *groupman_t::find_node_loc(ea_t ea)
+pnodegroup_t supergroup_t::get_first_ng()
 {
-  //HINT: use a map with lower_bound() if this function is to be called
-  //      frequently and speed is of importance
-  for (nid2ndef_t::iterator it = all_nds.begin();
-       it != all_nds.end();
-       ++it)
-  {
-    pnodedef_t nd = it->second;
-    if (nd->start >= ea && ea < nd->end)
-      return find_nodeid_loc(nd->nid);
-  }
-  return NULL;
+  return groups.get_first_ng();
 }
 
 //--------------------------------------------------------------------------

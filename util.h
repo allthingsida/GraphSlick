@@ -86,4 +86,10 @@ asize_t str2asizet(const char *str);
 */
 char *skip_spaces(char *p);
 
+//--------------------------------------------------------------------------
+/**
+* @brief Returns whether a graphical version of IDA is being used
+*/
+bool is_ida_gui();
+
 #endif
