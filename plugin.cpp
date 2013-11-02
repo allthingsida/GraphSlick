@@ -47,6 +47,10 @@ History
                                 - Added 'refresh view' and 'show options' context menus								
                                 - Introduced get_ng_id() helper function to resolve node ids automatically based on current view mode
                                 - Fixed wrong node id resolution upon double click on chooser lines								
+11/01/2013 - eliasb             - Introduced redo_layout() to actually refresh and make the layout
+                                - refresh_view() is a placeholder for a hack that will cause a screen repaint
+                                - renamed 'lazy_sh_mode' to 'manual_refresh_mode'
+                                - added a second chooser column to show EA of first ND in the NG
 */
 
 #pragma warning(disable: 4018 4800)
@@ -73,6 +77,7 @@ static const char STR_GS_VIEW[]           = "Graph Slick - View";
 static const char STR_OUTWIN_TITLE[]      = "Output window";
 static const char STR_IDAVIEWA_TITLE[]    = "IDA View-A";
 static const char STR_SEARCH_PROMPT[]     = "Please enter search string";
+static const char STR_DUMMY_SG_NAME[]     = "No name";
 
 //--------------------------------------------------------------------------
 typedef std::map<int, bgcolor_t> ncolormap_t;
@@ -105,9 +110,9 @@ struct gsoptions_t
   bool append_node_id;
 
   /**
-  * @brief Lazy mode selection/highlight
+  * @brief Manual refresh view on selection/highlight
   */
-  bool lazy_sh_mode;
+  bool manual_refresh_mode;
 
   /**
   * @brief Highlight synthetic nodes 
@@ -146,7 +151,7 @@ struct gsoptions_t
   void load_options()
   {
     //TODO: load from netnode
-    lazy_sh_mode = true;
+    manual_refresh_mode = true;
     append_node_id = false;
     highlight_syntethic_nodes = false;
     show_options_dialog_next_time = true;
@@ -254,12 +259,12 @@ private:
     // Clear selection
     if (menu_id == idm_clear_sel)
     {
-      clear_selection(options->lazy_sh_mode);
+      clear_selection(options->manual_refresh_mode);
     }
     // Clear highlighted nodes
     else if (menu_id == idm_clear_highlight)
     {
-      clear_highlighting(options->lazy_sh_mode);
+      clear_highlighting(options->manual_refresh_mode);
     }
     // Selection mode change
     else if (menu_id == idm_set_sel_mode)
@@ -270,18 +275,18 @@ private:
     // Switch to single view mode
     else if (menu_id == idm_single_view_mode)
     {
-      refresh_view(gvrfm_single_mode);
+      redo_layout(gvrfm_single_mode);
     }
     // Switch to combined view mode
     else if (menu_id == idm_combined_view_mode)
     {
-      refresh_view(gvrfm_combined_mode);
+      redo_layout(gvrfm_combined_mode);
     }
     // Forcefully refresh the current view mode
     else if (menu_id == idm_refresh_view)
     {
-      // This triggers graph relayout. It will cause all lazy
-      refresh_view(gvrfm_soft);
+      // Just issue a layout refresh without re-computing the graph nodes/edges
+      redo_layout(gvrfm_soft);
     }
     // Show the options dialog
     else if (menu_id == idm_show_options)
@@ -291,12 +296,12 @@ private:
     // Highlight similar node group
     else if (menu_id == idm_highlight_similar)
     {
-      highlight_similar_selection(options->lazy_sh_mode);
+      highlight_similar_selection(options->manual_refresh_mode);
     }
     // Find and highlight supergroup
     else if (menu_id == idm_find_highlight)
     {
-      find_and_highlight_nodes(options->lazy_sh_mode);
+      find_and_highlight_nodes(options->manual_refresh_mode);
     }
     else if (menu_id == idm_test)
     {
@@ -383,7 +388,7 @@ private:
         {
           toggle_select_node(
             item1->node, 
-            options->lazy_sh_mode);
+            options->manual_refresh_mode);
         }
 
         // don't ignore the click
@@ -458,10 +463,10 @@ private:
           mg->clear();
           reset_states();
 		  
-    		  // Remember the current graph mode
+          // Remember the current graph mode
           cur_view_mode = refresh_mode;
 		  
-		      // Switch to the desired mode
+          // Switch to the desired mode
           if (refresh_mode == gvrfm_single_mode)
           {
             msg(STR_GS_MSG "Switching to single mode view...");
@@ -593,18 +598,29 @@ private:
       del_menu(idm_set_sel_mode);
     }
 
-    idm_set_sel_mode = add_menu(
-          sel_mode ? "End selection mode" : "Start selection mode", "S");
+    const char *label = sel_mode ? "End selection mode" : "Start selection mode";
+
+    idm_set_sel_mode = add_menu(label, "S");
 
     in_sel_mode = sel_mode;
+    msg(STR_GS_MSG "%s\n", label);
   }
 
 public:
 
   /**
+  * @brief Refresh the current screen and the visible nodes (not the layout)
+  */
+  void refresh_view()
+  {
+    refresh_mode = gvrfm_single_mode;
+    //TODO: trigger a window to show/hide so IDA repaints the nodes
+  }
+
+  /**
   * @brief Set refresh mode and issue a refresh
   */
-  void refresh_view(gvrefresh_modes_e rm)
+  void redo_layout(gvrefresh_modes_e rm)
   {
     refresh_mode = rm;
     refresh_viewer(gv);
@@ -616,7 +632,7 @@ public:
   bool highlight_nodes(
       pnodegroup_t ng, 
       bgcolor_t clr,
-      bool lazy_mode)
+      bool delay_refresh)
   {
     intset_t newly_colored;
 
@@ -627,7 +643,7 @@ public:
       if (gr_nid == -1)
         return false;
 
-      if (lazy_mode)
+      if (delay_refresh)
         newly_colored.insert(gr_nid);
 
       highlighted_nodes[gr_nid] = clr;
@@ -642,7 +658,7 @@ public:
       {
         int nid = (*it)->nid;
 
-        if (lazy_mode)
+        if (delay_refresh)
           newly_colored.insert(nid);
 
         highlighted_nodes[nid] = clr;
@@ -654,8 +670,8 @@ public:
       return false;
     }
 
-    // In lazy mode, just print what we plan to highlight
-    if (lazy_mode)
+    // In delayed refresh mode, just print what we plan to highlight
+    if (delay_refresh)
     {
       // Just print
       msg(STR_GS_MSG "Lazy highlight( ");
@@ -670,6 +686,7 @@ public:
           pnodedef_t nd = (*gm->get_nds())[nid];
           if (nd == NULL)
             continue;
+
           msg("%d : %a : %a ", nd->nid, nd->start, nd->end);
           if (--t > 0)
             msg(", ");
@@ -684,7 +701,7 @@ public:
     // Refresh immediately
     else
     {
-      refresh_view(gvrfm_soft);
+      refresh_view();
     }
     return true;
   }
@@ -695,7 +712,7 @@ public:
   void highlight_nodes(
           pnodegroup_list_t ngl, 
           colorgen_t &cg,
-          bool lazy_mode)
+          bool delay_refresh)
   {
     // Use one color for all the different group defs
     colorvargen_t cv;
@@ -709,16 +726,16 @@ public:
       bgcolor_t clr = cg.get_color_anyway(cv);
       pnodegroup_t ng = *it;
 
-      // Always call with lazy mode in the inner loop
+      // Always call with delayed refresh mode in the inner loop
       highlight_nodes(
           ng, 
           clr,
           true);
     }
 
-    // Since we called with lazy mode, now see if refresh is needed
-    if (!lazy_mode)
-      refresh_view(gvrfm_soft);
+    // Since we called with delayed refresh mode, now see if refresh is needed
+    if (!delay_refresh)
+      refresh_view();
   }
 
   /**
@@ -727,7 +744,7 @@ public:
   void highlight_nodes(
     psupergroup_listp_t groups,
     colorgen_t &cg,
-    bool lazy_mode)
+    bool delay_refresh)
   {
     colorvargen_t cv;
     for (supergroup_listp_t::iterator it=groups->begin();
@@ -764,9 +781,9 @@ public:
       }
     }
 
-    // Since we called with lazy mode, now see if refresh is needed
-    if (!lazy_mode)
-      refresh_view(gvrfm_soft);
+    // Since we were called with delayed refresh mode, now see if refresh is needed
+    if (!delay_refresh)
+      refresh_view();
   }
 
 
@@ -781,21 +798,21 @@ public:
   /**
   * @brief Clear the selection
   */
-  void clear_selection(bool lazy_mode)
+  void clear_selection(bool delay_refresh)
   {
     selected_nodes.clear();
-    if (!lazy_mode)
-      refresh_view(gvrfm_soft);
+    if (!delay_refresh)
+      refresh_view();
   }
 
   /**
   * @brief Clear the highlighted nodes
   */
-  void clear_highlighting(bool lazy_mode)
+  void clear_highlighting(bool delay_refresh)
   {
     highlighted_nodes.clear();
-    if (!lazy_mode)
-      refresh_view(gvrfm_soft);
+    if (!delay_refresh)
+      refresh_view();
   }
 
   /**
@@ -974,7 +991,7 @@ public:
   */
   void toggle_select_node(
           int cur_node, 
-          bool lazy_mode)
+          bool delay_refresh)
   {
     ncolormap_t::iterator p = selected_nodes.find(cur_node);
     if (p == selected_nodes.end())
@@ -983,33 +1000,33 @@ public:
       selected_nodes.erase(p);
 
     // With quick selection mode, just display a message and don't force a refresh
-    if (lazy_mode)
+    if (delay_refresh)
     {
       msg(STR_GS_MSG "Selected %d\n", cur_node);
     }
     else
     {
       // Refresh the graph to reflect selection
-      refresh_view(gvrfm_soft);
+      refresh_view();
     }
   }
 
   /**
   * @brief Highlight nodes similar to the selection
   */
-  void highlight_similar_selection(bool lazy_mode)
+  void highlight_similar_selection(bool delay_refresh)
   {
     if (selected_nodes.empty())
       return;
 
     //TODO: highlight the similar selection
-	msg(STR_GS_MSG "Not implemented yet!\n");
+    msg(STR_GS_MSG "Not implemented yet!\n");
   }
 
   /**
   * @brief Find and highlights nodes
   */
-  void find_and_highlight_nodes(bool lazy_mode)
+  void find_and_highlight_nodes(bool delay_refresh)
   {
     static char last_pattern[MAXSTR] = {0};
 
@@ -1030,7 +1047,7 @@ public:
     pnodegroup_list_t groups = NULL;
 
     // Walk all the groups
-    psupergroup_listp_t sgroups = gm->get_supergroups();
+    psupergroup_listp_t sgroups = gm->get_path_sgs();
     for (supergroup_listp_t::iterator it=sgroups->begin();
          it != sgroups->end();
          ++it)
@@ -1048,9 +1065,9 @@ public:
     }
 
     // Refresh graph if at least there is one match
-    if (!lazy_mode)
+    if (!delay_refresh)
 	{
-      refresh_view(gvrfm_soft);
+      refresh_view();
       if (groups == NULL)
         return;
 	}
@@ -1197,6 +1214,11 @@ private:
     ((gschooser_t *)obj)->on_destroy();
   }
 
+  static void idaapi s_edit(void *obj, uint32 n)
+  {
+    ((gschooser_t *)obj)->on_edit_line(n);
+  }
+
   static void idaapi s_select(void *obj, const intvec_t &sel)
   {
     ((gschooser_t *)obj)->on_select(sel);
@@ -1235,50 +1257,102 @@ private:
   /**
   * @brief Return chooser line description
   */
-  void get_node_desc(gschooser_line_t *node, qstring *out)
+  void get_node_desc(
+        gschooser_line_t *node, 
+        qstring *out,
+        int col = 1)
   {
     switch (node->type)
     {
       // Handle a group file node
       case chlt_gm:
       {
-        *out = qbasename(node->gm->get_source_file());
+        if (col == 1)
+          *out = qbasename(node->gm->get_source_file());
         break;
       }
       // Handle super groups
       case chlt_sg:
       {
-        out->sprnt(MY_TABSTR "%s (%s) C(%d)", 
-          node->sg->name.c_str(), 
-          node->sg->id.c_str(),
-          node->sg->gcount());
+        if (col == 1)
+        {
+          out->sprnt(MY_TABSTR "%s (%s) C(%d)", 
+            node->sg->name.c_str(), 
+            node->sg->id.c_str(),
+            node->sg->gcount());
+        }
         break;
       }
       // Handle a node definition list
       case chlt_ng:
       {
         pnodegroup_t groups = node->ng;
-        size_t sz = groups->size();
-        out->sprnt(MY_TABSTR MY_TABSTR "C(%d):(", sz);
-        for (nodegroup_t::iterator it=groups->begin();
-              it != groups->end();
-              ++it)
+
+        if (col == 1)
         {
-          pnodedef_t nd = *it;
-          out->cat_sprnt("%d:%a:%a", nd->nid, nd->start, nd->end);
-          if (--sz > 0)
-            out->append(", ");
+          size_t sz = groups->size();
+          out->sprnt(MY_TABSTR MY_TABSTR "C(%d):(", sz);
+          for (nodegroup_t::iterator it=groups->begin();
+                it != groups->end();
+                ++it)
+          {
+            pnodedef_t nd = *it;
+            out->cat_sprnt("%d:%a:%a", nd->nid, nd->start, nd->end);
+            if (--sz > 0)
+              out->append(", ");
+          }
+          out->append(")");
         }
-        out->append(")");
+        else if (col == 2)
+        {
+          // Show the EA of the first node in this node group
+          pnodedef_t nd = groups->get_first_node();
+          if (nd != NULL)
+            out->sprnt("%a", nd->start);
+        }
         break;
       }
-    } // switch
+    }
+  }
+
+  /**
+  * @brief On edit line
+  */
+  void on_edit_line(uint32 n)
+  {
+    if (   gsgv == NULL  
+        || n > ch_nodes.size() 
+        || !IS_SEL(n) )
+    {
+      return;
+    }
+
+    gschooser_line_t &chn = ch_nodes[n-1];
+    if (chn.type != chlt_sg)
+      return;
+
+    psupergroup_t sg = chn.sg;
+    const char *desc = askstr(
+      HIST_IDENT, 
+      sg->get_display_name(STR_DUMMY_SG_NAME),
+      "Please enter new description");
+
+    if (desc == NULL)
+      return;
+
+    // Adjust the name
+    sg->name = desc;
+
+    if (!options.manual_refresh_mode)
+      gsgv->refresh_view();
   }
 
   /**
   * @brief Get textual representation of a given line
   */
-  void on_get_line(uint32 n, char *const *arrptr)
+  void on_get_line(
+      uint32 n, 
+      char *const *arrptr)
   {
     // Return the column name
     if (n == 0)
@@ -1294,9 +1368,14 @@ private:
         return;
 
       gschooser_line_t &cn = ch_nodes[n];
+
       qstring desc;
-      get_node_desc(&cn, &desc);
+      get_node_desc(&cn, &desc, 1);
       qstrncpy(arrptr[0], desc.c_str(), MAXSTR);
+
+      desc.qclear();
+      get_node_desc(&cn, &desc, 2);
+      qstrncpy(arrptr[1], desc.c_str(), MAXSTR);
     }
   }
 
@@ -1390,7 +1469,7 @@ private:
       case chlt_gm:
       {
         // Get all super groups
-        psupergroup_listp_t sgroups = gm->get_supergroups();
+        psupergroup_listp_t sgroups = gm->get_path_sgs();
 
         // Mark them for selection
         gsgv->highlight_nodes(
@@ -1434,8 +1513,8 @@ private:
       default:
         return;
     }
-    if (!options.lazy_sh_mode)
-      gsgv->refresh_view(gvrfm_soft);
+    if (!options.manual_refresh_mode)
+      gsgv->refresh_view();
   }
 
   /**
@@ -1509,6 +1588,7 @@ private:
   void populate_chooser_lines()
   {
     // TODO: do not delete previous lines
+	// TODO: add option to show similar_sgs
     ch_nodes.clear();
 
     // Add the first-level node = bbgroup file
@@ -1516,7 +1596,7 @@ private:
     line->type = chlt_gm;
     line->gm = gm;
 
-    psupergroup_listp_t sgroups = gm->get_supergroups();
+    psupergroup_listp_t sgroups = gm->get_path_sgs();
     for (supergroup_listp_t::iterator it=sgroups->begin();
          it != sgroups->end();
          ++it)
@@ -1569,6 +1649,8 @@ private:
   */
   void init_chi()
   {
+    static const int widths[] = {60, 16};
+
     memset(&chi, 0, sizeof(chi));
     chi.cb = sizeof(chi);
     chi.flags = 0;
@@ -1576,9 +1658,7 @@ private:
     chi.height = -1;
     chi.title = STR_GS_PANEL;
     chi.obj = this;
-    chi.columns = 1;
-
-    static const int widths[] = {60};
+    chi.columns = qnumber(widths);
     chi.widths = widths;
 
     chi.icon  = -1;
@@ -1592,18 +1672,18 @@ private:
     chi.destroyer   = s_destroyer;
     chi.refresh     = s_refresh;
     chi.select      = s_select;
+    chi.edit        = s_edit;
     chi.initializer = s_initializer;
 
 
     chi.popup_names = (const char **)qalloc(sizeof(char *) * 5);
     *(((char **)chi.popup_names)+0) = "Load bbgroup file"; // Insert
     *(((char **)chi.popup_names)+1) = "Reload bbgroup file"; // Delete
-    *(((char **)chi.popup_names)+2) = NULL; // Edit
+    *(((char **)chi.popup_names)+2) = "Edit description"; // Edit
     *(((char **)chi.popup_names)+3) = NULL; // Refresh
     *(((char **)chi.popup_names)+4) = NULL; // Copy
 
     //static uint32 idaapi *s_update(void *obj, uint32 n);
-    //void (idaapi *edit)(void *obj, uint32 n);
     //static int idaapi s_get_icon)(void *obj, uint32 n);
     //void (idaapi *get_attrs)(void *obj, uint32 n, chooser_item_attrs_t *attrs);
   }
