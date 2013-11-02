@@ -101,7 +101,9 @@ bool sanitize_groupman(
     missing_sg->name = missing_sg->id = "orphan_nodes";
     // This is a synthetic group
     missing_sg->is_synthetic = true;
-    gm->add_supergroup(missing_sg);
+    gm->add_supergroup(
+          gm->get_path_sgs(),
+          missing_sg);
   }
 
   return true;

@@ -21,6 +21,7 @@ History
 10/29/2013 - eliasb     - added sanity checks to fc_to_combined_mg()
                         - functions don't compute flowchart each time now. user can pass a flowchart
                         - added sanitize_groupman() to allow loaded incomplete bbgroup file						
+11/01/2013 - eliasb     - Now sanitize_groupman()' sanitized the path SGL only
 --------------------------------------------------------------------------*/
 
 
@@ -64,7 +65,7 @@ class fc_to_combined_mg
     ng2nid_t::iterator it = group2id->find(loc->ng);
     if (it == group2id->end())
     {
-      // Assign an auto-incr id
+      // Assign an auto-increment id
       group_id = group2id->size();  
       (*group2id)[loc->ng] = group_id;
 
@@ -97,11 +98,13 @@ class fc_to_combined_mg
         // Are there any groupped nodes?
         if (loc->ng->size() > 1)
         {
+          //TODO: OPTION: enlarge groupped label
+          gn.text.append("\n\n\n");
+
           // Display the group name or the group id
-          if (!loc->sg->name.empty())
-            gn.text = loc->sg->name;
-          else
-            gn.text = loc->sg->id;
+          gn.text.append(loc->sg->get_display_name());
+
+          gn.text.append("\n\n\n");
         }
         else
         {
@@ -141,8 +144,8 @@ class fc_to_combined_mg
     // Compute the total size of nodes needed for the combined graph
     // The size is the total count of node def lists in each group def
     size_t node_count = 0;
-    for (supergroup_listp_t::iterator it=gm->get_supergroups()->begin();
-         it != gm->get_supergroups()->end();
+    for (supergroup_listp_t::iterator it=gm->get_path_sgs()->begin();
+         it != gm->get_path_sgs()->end();
          ++it)
     {
       psupergroup_t sg = *it;
@@ -224,7 +227,7 @@ bool func_to_mgraph(
 
 //--------------------------------------------------------------------------
 /**
-* @brief Sanitize the contents of the groupman versus the flowchart 
+* @brief Sanitize the contents of the groupman path SGL versus the flowchart 
          of the function
 */
 bool sanitize_groupman(
