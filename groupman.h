@@ -137,6 +137,11 @@ struct supergroup_t
   inline size_t gcount() { return groups.size(); }
 
   /**
+  * @brief Checks whether the SG has no more groups
+  */
+  inline bool empty() { return groups.empty(); }
+
+  /**
   * @brief Return the first node definition from the first group in the group list
   */
   pnodedef_t get_first_node();
@@ -145,13 +150,26 @@ struct supergroup_t
   * @brief Return the first nodegroup
   */
   pnodegroup_t get_first_ng();
+
+  /**
+  * @brief Return a descriptive name for the super group
+  */
+  const char *get_display_name(const char *defval = NULL);
 };
 
 //--------------------------------------------------------------------------
 typedef supergroup_t *psupergroup_t;
 
 //--------------------------------------------------------------------------
-typedef qlist<psupergroup_t> supergroup_listp_t;
+class supergroup_listp_t: public qlist<psupergroup_t>
+{
+public:
+  /**
+  * @brief Copy this SGL to the desired one
+  */
+  void copy_to(psupergroup_t dest);
+};
+
 typedef supergroup_listp_t *psupergroup_listp_t;
 
 //--------------------------------------------------------------------------
@@ -193,12 +211,17 @@ private:
   qstring filename;
 
   /**
-  * @brief Super groups definition
+  * @brief Path super groups definition
   */
-  supergroup_listp_t sgroups;
+  supergroup_listp_t path_sgl;
 
   /**
-  * @brief A lookup table for all node defintions
+  * @brief Similar nodes super groups
+  */
+  supergroup_listp_t similar_sgl;
+
+  /**
+  * @brief A lookup table for all node definitions
   */
   nid2ndef_t all_nds;
 
@@ -214,6 +237,18 @@ private:
       psupergroup_t sg, 
       char *grpstr);
 
+  /**
+  * @brief Parse a line
+  */
+  bool parse_line(
+      psupergroup_t sg,
+      char *line);
+
+  /**
+  * @brief Free and clear a super group list
+  */
+  void clear_sgl(psupergroup_listp_t sgl);
+
 public:
 
   /**
@@ -222,9 +257,9 @@ public:
   void initialize_lookups();
 
   /**
-  * @brief Return the super groups
+  * @brief Return the path super groups
   */
-  inline psupergroup_listp_t get_supergroups() { return &sgroups; }
+  inline psupergroup_listp_t get_path_sgl() { return &path_sgl; }
 
   /**
   * @brief All the node defs
@@ -249,8 +284,13 @@ public:
   /**
   * @brief Add a new super group
   */
-  psupergroup_t add_supergroup(psupergroup_t sg = NULL);
+  psupergroup_t add_supergroup(
+    psupergroup_listp_t sgl,
+    psupergroup_t sg = NULL);
 
+  bool remove_supergroup(
+    psupergroup_listp_t sgl,
+    psupergroup_t sg);
   /**
   * @brief Rewrites the structure from memory back to a file
   * @param filename - the output file name
@@ -263,6 +303,8 @@ public:
   bool parse(
     const char *filename, 
     bool init_cache = true);
+
+  pnodegroup_t combine_ngl(pnodegroup_list_t ngl);
 
   /**
   * @brief Find a node location by ID
@@ -283,5 +325,9 @@ public:
   * @brief Returns one node definition from the data structure
   */
   pnodedef_t get_first_nd();
+
+  void emit_sgl(
+    FILE *fp,
+    supergroup_listp_t* path_sgl);
 };
 #endif

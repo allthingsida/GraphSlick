@@ -18,6 +18,8 @@ History
 10/31/2013 - eliasb             - added get_first_node() helper function to nodegroup_t/nodegroup_list_t
                                 - renamed png2nid_t to ng2nid_t
                                 - added nodegroup_list_t::get_first_ng()								
+11/01/2013 - eliasb             - groupman parser now supports two sections: similar nodes and node path information
+11/04/2013 - eliasb             - added remove_supergroup()/combine_ngl() to groupman_t								
 --------------------------------------------------------------------------*/
 
 #include "groupman.h"
@@ -36,6 +38,8 @@ static const char STR_GROUPPED[]    = "GROUPPED";
 static const char STR_SELECTED[]    = "SELECTED";
 static const char STR_NODESET[]     = "NODESET";
 static const char STR_GROUP_NAME[]  = "GROUPNAME";
+static const char STR_PATHINFO[]    = "PATHINFO";
+static const char STR_SIMILARINFO[] = "SIMILARINFO";
 
 //--------------------------------------------------------------------------
 //--  NODEGROUP_LIST CLASS  ------------------------------------------------
@@ -130,6 +134,65 @@ pnodegroup_t supergroup_t::add_nodegroup(pnodegroup_t ng)
 }
 
 //--------------------------------------------------------------------------
+void supergroup_t::clear()
+{
+  groups.free_nodegroup(true);
+  groups.clear();
+}
+
+//--------------------------------------------------------------------------
+bool supergroup_t::remove_nodegroup(pnodegroup_t ng)
+{
+  for (nodegroup_list_t::iterator it=groups.begin();
+       it != groups.end();
+       ++it)
+  {
+    pnodegroup_t f_ng = *it;
+    if (f_ng == ng)
+    {
+      groups.erase(it);
+      return true;
+    }
+  }
+  return false;
+}
+
+//--------------------------------------------------------------------------
+pnodedef_t supergroup_t::get_first_node()
+{
+  pnodegroup_t ng = get_first_ng();
+  return ng->get_first_node();
+}
+
+//--------------------------------------------------------------------------
+pnodegroup_t supergroup_t::get_first_ng()
+{
+  return groups.get_first_ng();
+}
+
+//--------------------------------------------------------------------------
+void supergroup_listp_t::copy_to(psupergroup_t dest)
+{
+  //TODO: to deep copy one SG to another
+}
+
+//--------------------------------------------------------------------------
+const char *supergroup_t::get_display_name( const char *defval)
+{
+  if (name.empty())
+  {
+    if (id.empty())
+      return defval;
+    else
+      return id.c_str();
+  }
+  else
+  {
+    return name.c_str();
+  }
+}
+
+//--------------------------------------------------------------------------
 //--  GROUP MANAGER CLASS  -------------------------------------------------
 //--------------------------------------------------------------------------
 
@@ -212,8 +275,8 @@ void groupman_t::initialize_lookups()
   nid2loc.clear();
 
   // Build new cache
-  for (supergroup_listp_t::iterator it=sgroups.begin();
-       it != sgroups.end();
+  for (supergroup_listp_t::iterator it=path_sgl.begin();
+       it != path_sgl.end();
        ++it)
   {
     // Walk each super group
@@ -245,39 +308,45 @@ groupman_t::~groupman_t()
 }
 
 //--------------------------------------------------------------------------
-void groupman_t::clear()
+void groupman_t::clear_sgl(psupergroup_listp_t sgl)
 {
-  for (supergroup_listp_t::iterator it=sgroups.begin(); 
-       it != sgroups.end();
+  for (supergroup_listp_t::iterator it=sgl->begin(); 
+       it != sgl->end();
        ++it)
   {
     psupergroup_t sg = *it;
     sg->clear();
     delete sg;
   }
-  sgroups.clear();
+  sgl->clear();
+}
+
+//--------------------------------------------------------------------------
+void groupman_t::clear()
+{
+  clear_sgl(&path_sgl);
   all_nds.clear();
 }
 
 //--------------------------------------------------------------------------
-psupergroup_t groupman_t::add_supergroup(psupergroup_t sg)
+psupergroup_t groupman_t::add_supergroup(
+    psupergroup_listp_t sgl,
+    psupergroup_t sg)
 {
   if (sg == NULL)
     sg = new supergroup_t();
 
-  sgroups.push_back(sg);
+  sgl->push_back(sg);
   return sg;
 }
 
 //--------------------------------------------------------------------------
-bool groupman_t::emit(const char *filename)
+void groupman_t::emit_sgl(
+    FILE *fp,
+    psupergroup_listp_t sgl)
 {
-  FILE *fp = qfopen(filename, "w");
-  if (fp == NULL)
-    return false;
-
-  for (supergroup_listp_t::iterator it=sgroups.begin();
-       it != sgroups.end();
+  for (supergroup_listp_t::iterator it=sgl->begin();
+       it != sgl->end();
        ++it)
   {
     psupergroup_t sg = *it;
@@ -314,8 +383,53 @@ bool groupman_t::emit(const char *filename)
     }
     qfprintf(fp, "\n");
   }
+}
+
+//--------------------------------------------------------------------------
+bool groupman_t::emit(const char *filename)
+{
+  FILE *fp = qfopen(filename, "w");
+  if (fp == NULL)
+    return false;
+
+  qfprintf(fp, "--%s\n", STR_PATHINFO);
+  emit_sgl(fp, &path_sgl);
+
   qfclose(fp);
 
+  return true;
+}
+
+//--------------------------------------------------------------------------
+bool groupman_t::parse_line(
+    psupergroup_t sg,
+    char *line)
+{
+  for (char *saved_ptr, *token = qstrtok(line, ";", &saved_ptr); 
+       token != NULL;
+       token = qstrtok(NULL, ";", &saved_ptr))
+  {
+    char *val = strchr(token, ':');
+    if (val == NULL)
+      continue;
+
+    // Kill separator and adjust value pointer
+    *val++ = '\0';
+    val = skip_spaces(val);
+
+    // Set key pointer
+    char *key = skip_spaces(token);
+
+    if (stricmp(key, STR_ID) == 0)
+    {
+      sg->id = val;  
+    }
+    else if (stricmp(key, STR_NODESET) == 0)
+    {
+      if (!parse_nodeset(sg, val))
+        return false;
+    }
+  }
   return true;
 }
 
@@ -337,6 +451,7 @@ bool groupman_t::parse(
   std::string line;
 
   //TODO: generate dummy group names ; int group_dummy_name;
+  psupergroup_listp_t cur_sgl = &path_sgl;
 
   while (in_file.good())
   {
@@ -348,40 +463,29 @@ bool groupman_t::parse(
     if (s[0] == '\0' || s[0] == '#')
       continue;
 
+    // Section switch?
+    if (s[0] == '-' && s[1] == '-' && s[2] != '\0')
+    {
+      s += 2;
+      if (qstrcmp(s, STR_PATHINFO) == 0)
+        cur_sgl = &path_sgl;
+      else if (qstrcmp(s, STR_SIMILARINFO) == 0)
+        cur_sgl = &similar_sgl;
+
+      // Skip this line after section switch
+      continue;
+    }
+
     // Take a copy of the line so we tokenize it
-    char *a_line = qstrdup(s);
-    s = a_line;
+    s = qstrdup(s);
 
     // Create a new super group definition per line
-    psupergroup_t sg = add_supergroup();
+    psupergroup_t sg = add_supergroup(cur_sgl);
 
-    for (char *saved_ptr, *token = qstrtok(s, ";", &saved_ptr); 
-         token != NULL;
-         token = qstrtok(NULL, ";", &saved_ptr))
-    {
-      char *val = strchr(token, ':');
-      if (val == NULL)
-        continue;
+    parse_line(sg, s);
 
-      // Kill separator and adjust value pointer
-      *val++ = '\0';
-      val = skip_spaces(val);
-
-      // Set key pointer
-      char *key = skip_spaces(token);
-
-      if (stricmp(key, STR_ID) == 0)
-      {
-        sg->id = val;  
-      }
-      else if (stricmp(key, STR_NODESET) == 0)
-      {
-        if (!parse_nodeset(sg, val))
-          break;
-      }
-    }
     // Free this line
-    qfree(a_line);
+    qfree(s);
   }
   in_file.close();
 
@@ -390,44 +494,6 @@ bool groupman_t::parse(
     initialize_lookups();
 
   return true;
-}
-
-//--------------------------------------------------------------------------
-void supergroup_t::clear()
-{
-  groups.free_nodegroup(true);
-  groups.clear();
-}
-
-//--------------------------------------------------------------------------
-bool supergroup_t::remove_nodegroup(pnodegroup_t ng)
-{
-  //TODO: test me
-  for (nodegroup_list_t::iterator it=groups.begin();
-       it != groups.end();
-       ++it)
-  {
-    pnodegroup_t f_ng = *it;
-    if (f_ng == ng)
-    {
-      groups.erase(it);
-      return true;
-    }
-  }
-  return false;
-}
-
-//--------------------------------------------------------------------------
-pnodedef_t supergroup_t::get_first_node()
-{
-  pnodegroup_t ng = get_first_ng();
-  return ng->get_first_node();
-}
-
-//--------------------------------------------------------------------------
-pnodegroup_t supergroup_t::get_first_ng()
-{
-  return groups.get_first_ng();
 }
 
 //--------------------------------------------------------------------------
@@ -440,11 +506,11 @@ const char *groupman_t::get_source_file()
 pnodedef_t groupman_t::get_first_nd()
 {
   // No super groups defined?
-  if (sgroups.empty())
+  if (path_sgl.empty())
     return NULL;
 
   // Get the first super group
-  psupergroup_t first_sgroup = (*(sgroups.begin()));
+  psupergroup_t first_sgroup = (*(path_sgl.begin()));
   if (first_sgroup->gcount() == 0)
     return NULL;
 
@@ -464,4 +530,75 @@ pnodedef_t groupman_t::get_first_nd()
     // REturn the first node in the first group
     return *(ng->begin());
   }
+}
+
+//--------------------------------------------------------------------------
+bool groupman_t::remove_supergroup(
+      psupergroup_listp_t sgl,
+      psupergroup_t sg)
+{
+  for (supergroup_listp_t::iterator it=sgl->begin();
+       it != sgl->end();
+       ++it)
+  {
+    psupergroup_t f_sg = *it;
+    if (f_sg == sg)
+    {
+      sgl->erase(it);
+      return true;
+    }
+  }
+  return false;
+}
+
+//--------------------------------------------------------------------------
+pnodegroup_t groupman_t::combine_ngl(pnodegroup_list_t ngl)
+{
+  nodegroup_list_t::iterator it = ngl->begin();
+
+  // Get the first node group
+  pnodegroup_t ng0 = *it;
+
+  for (++it;
+       it != ngl->end(); 
+       ++it)
+  {
+    pnodegroup_t ng = *it;
+
+    // Get the first node from the other NG
+    pnodedef_t nd = ng->get_first_node();
+
+    // Node group is empty?
+    if (nd == NULL)
+      continue;
+
+    // Get the supergroup containing this node group
+    nodeloc_t *loc = find_nodeid_loc(nd->nid);
+
+    // Move all node definitions to the first node group
+    for (nodegroup_t::iterator it = ng->begin();
+         it != ng->end();
+         ++it)
+    {
+      pnodedef_t nd = *it;
+      ng0->add_node(nd);
+    }
+
+    // Clear the items in the node group
+    ng->clear();
+
+    // Remove this node group from the super group
+    loc->sg->remove_nodegroup(ng);
+    if (loc->sg->empty())
+    {
+      remove_supergroup(
+        get_path_sgl(),
+        loc->sg);
+    }
+  }
+
+  // Reinitialize lookups
+  initialize_lookups();
+
+  return ng0;
 }
