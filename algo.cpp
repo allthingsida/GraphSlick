@@ -102,7 +102,7 @@ bool sanitize_groupman(
     // This is a synthetic group
     missing_sg->is_synthetic = true;
     gm->add_supergroup(
-          gm->get_path_sgs(),
+          gm->get_path_sgl(),
           missing_sg);
   }
 

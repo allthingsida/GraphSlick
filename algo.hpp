@@ -144,12 +144,12 @@ class fc_to_combined_mg
     // Compute the total size of nodes needed for the combined graph
     // The size is the total count of node def lists in each group def
     size_t node_count = 0;
-    for (supergroup_listp_t::iterator it=gm->get_path_sgs()->begin();
-         it != gm->get_path_sgs()->end();
+    for (supergroup_listp_t::iterator it=gm->get_path_sgl()->begin();
+         it != gm->get_path_sgl()->end();
          ++it)
     {
       psupergroup_t sg = *it;
-      node_count += sg->groups.size();
+      node_count += sg->gcount();
     }
 
     // Resize the graph
@@ -157,23 +157,23 @@ class fc_to_combined_mg
 
     // Build the combined graph
     int snodes_count = fc->size();
-    for (int n=0; n < snodes_count; n++)
+    for (int nid=0; nid < snodes_count; nid++)
     {
       // Figure out the combined node ID
-      int group_id = get_groupid(n);
+      int group_id = get_groupid(nid);
       if (group_id == -1)
         return false;
 
       // Build the edges
-      for (int isucc=0, succ_sz=fc->nsucc(n); 
+      for (int isucc=0, succ_sz=fc->nsucc(nid); 
            isucc < succ_sz; 
            isucc++)
       {
         // Get the successor node
-        int nsucc = fc->succ(n, isucc);
+        int nid_succ = fc->succ(nid, isucc);
 
         // This node belongs to the same group?
-        int succ_grid = get_groupid(nsucc);
+        int succ_grid = get_groupid(nid_succ);
         if (succ_grid == -1)
           return false;
 
