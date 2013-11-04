@@ -58,7 +58,7 @@ History
                                 - refactored graph mode view switch into functions
                                 - Added get_ng_from_ngid(ngid) utility function to do reverse ng2nid lookup
                                 - Added  ngid_to_sg(ngid) utility function to do ngid to containing SG lookup
-                                - Temporarlily added 'refresh_parent()' to refresh the chooser. Thinking to introduce a chooser interface to allow communication between gsgv and gsch
+                                - Added gsgv_actions_t to allow better interfacing between GSGV and GSCH
 */
 
 #pragma warning(disable: 4018 4800)
@@ -184,6 +184,23 @@ struct gsoptions_t
 
 //--------------------------------------------------------------------------
 /**
+* @brief GSGraph actions. It allows parents to get notified on GSGV actions
+*/
+class gsgv_actions_t
+{
+public:
+  /**
+  * @brief The GSGV is closing
+  */
+  virtual void notify_close() = 0;
+  /**
+  * @brief The GSGV content is refreshing
+  */
+  virtual void notify_refresh(bool hard_refresh = false) = 0;
+};
+
+//--------------------------------------------------------------------------
+/**
 * @brief Graph data/context
 */
 class gsgraphview_t
@@ -228,7 +245,7 @@ private:
   qflow_chart_t *func_fc;
   gvrefresh_modes_e refresh_mode, cur_view_mode;
 
-  gsgraphview_t **parent_ref;
+  gsgv_actions_t *actions;
 
   /**
   * @brief View mode menu items
@@ -348,8 +365,8 @@ private:
 
       if (edit_sg_description(sg))
       {
-        // Refresh the chooser
-        refresh_parent();
+        // Notify that a refresh is taking place
+        actions->notify_refresh();
       }
     }
     //
@@ -387,8 +404,9 @@ private:
       gm->combine_ngl(&ngl);
 
       // Refresh the chooser
-      refresh_parent();
+      actions->notify_refresh(true);
 
+      // Re-layout
       redo_layout(cur_view_mode);
     }
     //
@@ -396,6 +414,7 @@ private:
     //
     else if (menu_id == idm_test)
     {
+      //TEST: ...
     }
   }
 
@@ -625,12 +644,7 @@ private:
         gv = NULL;
         form = NULL;
 
-        // Parent ref set?
-        if (parent_ref != NULL)
-        {
-          // Clear this variable in the parent
-          *parent_ref = NULL;
-        }
+        actions->notify_close();
 
         delete this;
         break;
@@ -698,6 +712,7 @@ public:
   {
     refresh_mode = rm;
     refresh_viewer(gv);
+
   }
 
   /**
@@ -905,11 +920,11 @@ public:
 
 
   /**
-  * @brief Set the parent ref variable
+  * @brief Set the actions variable
   */
-  inline void set_parentref(gsgraphview_t **pr)
+  inline void set_callback(gsgv_actions_t *actions)
   {
-    parent_ref = pr;
+    this->actions = actions;
   }
 
   /**
@@ -1054,7 +1069,7 @@ public:
     gv = NULL;
     form = NULL;
     refresh_mode = options->start_view_mode;
-    set_parentref(NULL);
+    set_callback(NULL);
 
     in_sel_mode = false;
     cur_node = -1;
@@ -1307,19 +1322,6 @@ public:
 
     msg("done\n");
   }
-
-  /**
-  * @brief Refreshes the parent control
-  */
-  void refresh_parent(bool populate_lines = false)
-  {
-    if (populate_lines)
-    {
-      //TODO: how to do it?
-      //;!populate_chooser_lines();
-    }
-    refresh_chooser(STR_GS_PANEL);
-  }
 };
 gsgraphview_t::idmenucbtx_t gsgraphview_t::menu_ids;
 
@@ -1364,7 +1366,7 @@ typedef qvector<gschooser_line_t> chooser_lines_vec_t;
 /**
 * @brief GraphSlick chooser class
 */
-class gschooser_t
+class gschooser_t: public gsgv_actions_t
 {
 private:
   static gschooser_t *singleton;
@@ -1728,8 +1730,11 @@ private:
   /**
   * @brief Refresh the chooser lines
   */
-  void refresh()
+  void refresh(bool populate_lines)
   {
+    if (populate_lines)
+      populate_chooser_lines();
+
     refresh_chooser(STR_GS_PANEL);
   }
 
@@ -1764,12 +1769,29 @@ private:
     if (gsgv == NULL)
       return false;
 
-    gsgv->set_parentref(&gsgv);
+    gsgv->set_callback(this);
 
     // Remember last loaded file
     last_loaded_file = filename;
 
     return true;
+  }
+
+  /**
+  * @brief Notification that the GV is closing
+  */
+  void gsgv_actions_t::notify_close()
+  {
+    // Tell the chooser not to rely on the GSGV anymore
+    gsgv = NULL;
+  }
+
+  /**
+  * @brief The GV requested a refresh
+  */
+  void gsgv_actions_t::notify_refresh(bool hard_refresh = false)
+  {
+    refresh(hard_refresh);
   }
 
   /**
