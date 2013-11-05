@@ -83,6 +83,11 @@ public:
   * @brief Return the first nodegroup
   */
   pnodegroup_t get_first_ng();
+
+  /**
+  * @brief Find the biggest node group (i.e: with the highest ND count)
+  */
+  pnodegroup_t find_biggest();
 };
 typedef nodegroup_list_t *pnodegroup_list_t;
 

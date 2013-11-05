@@ -20,6 +20,10 @@ History
                                 - added nodegroup_list_t::get_first_ng()								
 11/01/2013 - eliasb             - groupman parser now supports two sections: similar nodes and node path information
 11/04/2013 - eliasb             - added remove_supergroup()/combine_ngl() to groupman_t								
+                                - added ngl::find_biggest() to find the bigest
+                                - combine_ngl() now groups under the biggest NGL
+                                - skip parsing lines on unknown sections
+								- fixed bug in emit file function: neither nodeset key nor group name were emitted
 --------------------------------------------------------------------------*/
 
 #include "groupman.h"
@@ -73,6 +77,24 @@ pnodegroup_t nodegroup_list_t::get_first_ng()
     return NULL;
   else
     return *begin();
+}
+
+//--------------------------------------------------------------------------
+pnodegroup_t nodegroup_list_t::find_biggest()
+{
+  pnodegroup_t ng = NULL;
+  for (iterator it=begin();
+       it != end();
+       ++it)
+  {
+    pnodegroup_t ng_f = *it;
+    if (    ng == NULL 
+      || ng->size() < ng_f->size())
+    {
+      ng = ng_f;
+    }
+  }
+  return ng;
 }
 
 //--------------------------------------------------------------------------
@@ -352,11 +374,17 @@ void groupman_t::emit_sgl(
     psupergroup_t sg = *it;
 
     // Write ID
-    qfprintf(fp, "%s:%s;", STR_ID, sg->id.c_str());
+    if (!sg->id.empty())
+      qfprintf(fp, "%s:%s;", STR_ID, sg->id.c_str());
+
+    // Write Name
+    if (!sg->name.empty())
+      qfprintf(fp, "%s:%s;", STR_GROUP_NAME, sg->name.c_str());
 
     size_t group_count = sg->groups.size();
     if (group_count > 0)
     {
+      qfprintf(fp, "%s:", STR_NODESET);
       nodegroup_list_t &ngl = sg->groups;
       for (nodegroup_list_t::iterator it = ngl.begin(); 
            it != ngl.end(); 
@@ -424,6 +452,10 @@ bool groupman_t::parse_line(
     {
       sg->id = val;  
     }
+    else if (stricmp(key, STR_GROUP_NAME) == 0)
+    {
+      sg->name = val;
+    }
     else if (stricmp(key, STR_NODESET) == 0)
     {
       if (!parse_nodeset(sg, val))
@@ -471,10 +503,16 @@ bool groupman_t::parse(
         cur_sgl = &path_sgl;
       else if (qstrcmp(s, STR_SIMILARINFO) == 0)
         cur_sgl = &similar_sgl;
+      else
+        cur_sgl = NULL;
 
       // Skip this line after section switch
       continue;
     }
+
+    // Skip lines when no known SGL section is being parsed
+    if (cur_sgl == NULL)
+      continue;
 
     // Take a copy of the line so we tokenize it
     s = qstrdup(s);
@@ -554,16 +592,21 @@ bool groupman_t::remove_supergroup(
 //--------------------------------------------------------------------------
 pnodegroup_t groupman_t::combine_ngl(pnodegroup_list_t ngl)
 {
-  nodegroup_list_t::iterator it = ngl->begin();
+  // Get the biggest group and use as the destination container
+  pnodegroup_t dest_ng = ngl->find_biggest();
 
-  // Get the first node group
-  pnodegroup_t ng0 = *it;
+  if (dest_ng == NULL)
+    return NULL;
 
-  for (++it;
+  for (nodegroup_list_t::iterator it = ngl->begin();
        it != ngl->end(); 
        ++it)
   {
     pnodegroup_t ng = *it;
+
+    // Skip the dest NG
+    if (ng == dest_ng)
+      continue;
 
     // Get the first node from the other NG
     pnodedef_t nd = ng->get_first_node();
@@ -581,7 +624,7 @@ pnodegroup_t groupman_t::combine_ngl(pnodegroup_list_t ngl)
          ++it)
     {
       pnodedef_t nd = *it;
-      ng0->add_node(nd);
+      dest_ng->add_node(nd);
     }
 
     // Clear the items in the node group
@@ -600,5 +643,5 @@ pnodegroup_t groupman_t::combine_ngl(pnodegroup_list_t ngl)
   // Reinitialize lookups
   initialize_lookups();
 
-  return ng0;
+  return dest_ng;
 }
