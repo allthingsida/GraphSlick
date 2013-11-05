@@ -59,6 +59,9 @@ History
                                 - Added get_ng_from_ngid(ngid) utility function to do reverse ng2nid lookup
                                 - Added  ngid_to_sg(ngid) utility function to do ngid to containing SG lookup
                                 - Added gsgv_actions_t to allow better interfacing between GSGV and GSCH
+                                - Added Jump to next highlighted/selected nodes
+								- Added save bbgroup functionality
+								- Added chooser on_show() event (not used now)
 */
 
 #pragma warning(disable: 4018 4800)
@@ -80,7 +83,7 @@ History
 
 //--------------------------------------------------------------------------
 static const char STR_CANNOT_BUILD_F_FC[] = "Cannot build function flowchart!";
-static const char STR_GS_PANEL[]          = "Graph Slick - Panel";
+static const char TITLE_GS_PANEL[]        = "Graph Slick - Panel";
 static const char STR_GS_VIEW[]           = "Graph Slick - View";
 static const char STR_OUTWIN_TITLE[]      = "Output window";
 static const char STR_IDAVIEWA_TITLE[]    = "IDA View-A";
@@ -253,6 +256,7 @@ private:
   int idm_single_view_mode, idm_combined_view_mode;
 
   int idm_clear_sel, idm_clear_highlight;
+  int idm_jump_next_selected_node, idm_jump_next_highlighted_node;
   int idm_set_sel_mode;
 
   int idm_edit_sg_desc;
@@ -268,6 +272,8 @@ private:
 
   ncolormap_t     highlighted_nodes;
   ncolormap_t     selected_nodes;
+
+  ncolormap_t::iterator it_selected_node, it_highlighted_node;
 
   /**
   * @brief Static menu item dispatcher
@@ -370,7 +376,7 @@ private:
       }
     }
     //
-    // Test: interactive groupping
+    // Combine node groups
     //
     else if (menu_id == idm_combine_ngs)
     {
@@ -410,11 +416,34 @@ private:
       redo_layout(cur_view_mode);
     }
     //
+    // Jump to next selected node
+    //
+    else if (menu_id == idm_jump_next_selected_node)
+    {
+      jump_to_next_node(it_selected_node, selected_nodes);
+    }
+    //
+    // Jump to next highlighted node
+    //
+    else if (menu_id == idm_jump_next_highlighted_node)
+    {
+      jump_to_next_node(it_highlighted_node, highlighted_nodes);
+    }
+    //
     // Test: interactive groupping
     //
     else if (menu_id == idm_test)
     {
-      //TEST: ...
+      if (selected_nodes.empty())
+        return;
+
+      // End? Rewind
+      if (it_selected_node == selected_nodes.end())
+        it_selected_node = selected_nodes.begin();
+
+      jump_to_node(gv, it_selected_node->first);
+
+      ++it_selected_node;
     }
   }
 
@@ -933,6 +962,7 @@ public:
   void clear_selection(bool delay_refresh)
   {
     selected_nodes.clear();
+    it_selected_node = selected_nodes.end();
     if (!delay_refresh)
       refresh_view();
   }
@@ -943,6 +973,7 @@ public:
   void clear_highlighting(bool delay_refresh)
   {
     highlighted_nodes.clear();
+    it_highlighted_node = highlighted_nodes.end();
     if (!delay_refresh)
       refresh_view();
   }
@@ -1092,33 +1123,37 @@ public:
     //
 
     add_menu("-");
-    idm_show_options        = add_menu("Show options",                 "O");
+    idm_show_options                 = add_menu("Show options",                   "O");
 
     // Highlighting / selection actions
     add_menu("-");
-    idm_clear_sel           = add_menu("Clear selection",              "D");
-    idm_clear_highlight     = add_menu("Clear highlighting",           "H");
+    idm_clear_sel                    = add_menu("Clear selection",                "D");
+    idm_clear_highlight              = add_menu("Clear highlighting",             "H");
+
+    // Cycling in selected/highlited nodes
+    idm_jump_next_highlighted_node   = add_menu("Jump to next highlighted node",  "J");
+    idm_jump_next_selected_node      = add_menu("Jump to next selected node",     "K");
 
     // Switch view mode actions
     add_menu("-");
-    idm_single_view_mode    = add_menu("Switch to ungroupped view",    "U");
-    idm_combined_view_mode  = add_menu("Switch to groupped view",      "G");
+    idm_single_view_mode             = add_menu("Switch to ungroupped view",      "U");
+    idm_combined_view_mode           = add_menu("Switch to groupped view",        "G");
 
     // Experimental actions
     add_menu("-");
-    idm_test                = add_menu("Test",                         "Q");
+    idm_test                         = add_menu("Test",                           "Q");
 
     // Searching actions
     add_menu("-");
-    idm_highlight_similar  = add_menu("Highlight similar nodes",       "M");
-    idm_find_highlight     = add_menu("Find group",                    "F");
+    idm_highlight_similar            = add_menu("Highlight similar nodes",        "M");
+    idm_find_highlight               = add_menu("Find group",                     "F");
 
     // Groupping actions
 
-    idm_combine_ngs        = add_menu("Combine nodes",                 "C");
+    idm_combine_ngs                  = add_menu("Combine nodes",                  "C");
 
     // Add the edit group description menu
-    idm_edit_sg_desc       = add_menu("Edit group description");
+    idm_edit_sg_desc                 = add_menu("Edit group description");
 
     //
     // Dynamic menu items
@@ -1287,6 +1322,10 @@ public:
     highlighted_nodes.clear();
     selected_nodes.clear();
 
+    // Clear highlight / selection iterators
+    it_selected_node = selected_nodes.end();
+    it_highlighted_node = highlighted_nodes.end();
+
     // No node is selected
     cur_node = -1;
   }
@@ -1321,6 +1360,23 @@ public:
       func_fc);
 
     msg("done\n");
+  }
+
+  /**
+  * @brief Jumps to next item in the container
+  */
+  void jump_to_next_node(ncolormap_t::iterator &it, ncolormap_t &cont)
+  {
+    if (cont.empty())
+      return;
+
+    // End? Rewind
+    if (it == cont.end())
+      it = cont.begin();
+
+    jump_to_node(gv, it->first);
+
+    ++it;
   }
 };
 gsgraphview_t::idmenucbtx_t gsgraphview_t::menu_ids;
@@ -1380,6 +1436,8 @@ private:
   qflow_chart_t func_fc;
   gsoptions_t options;
 
+  int idm_save_bbfile;
+
   static uint32 idaapi s_sizer(void *obj)
   {
     return ((gschooser_t *)obj)->on_get_size();
@@ -1429,6 +1487,30 @@ private:
   {
     ((gschooser_t *)obj)->on_select(sel);
   }
+
+  static uint32 idaapi s_onmenu_save_bbfile(void *obj, uint32 n)
+  {
+    ((gschooser_t *)obj)->onmenu_save_bbfile();
+    return n;
+  }
+
+  /**
+  * @brief Handle the save bbgroup menu command
+  */
+  void onmenu_save_bbfile()
+  {
+    const char *filename = askfile_c(
+        1, 
+        last_loaded_file.empty() ? "*.bbgroup" : last_loaded_file.c_str(), 
+        "Please select BBGROUP file to save to");
+
+    if (filename == NULL)
+      return;
+
+    gm->emit(filename);
+    return;
+  }
+
 
   /**
   * @brief Delete the singleton instance if applicable
@@ -1735,7 +1817,7 @@ private:
     if (populate_lines)
       populate_chooser_lines();
 
-    refresh_chooser(STR_GS_PANEL);
+    refresh_chooser(TITLE_GS_PANEL);
   }
 
   /**
@@ -1845,6 +1927,8 @@ private:
   */
   void on_init()
   {
+    // Chooser was shown, now create a menu item
+    idm_save_bbfile = add_menu("Save bbgroup file", s_onmenu_save_bbfile, "Ctrl-S");
 #ifdef _DEBUG
     const char *fn;
     
@@ -1855,8 +1939,16 @@ private:
     //fn = "P:\\Tools\\idadev\\plugins\\workfile-1.bbgroup";
     fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\f1.bbgroup";
     //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\doit.bbgroup";
+    //fn = "c:\\temp\\x.bbgroup";
     load_file_show_graph(fn);
 #endif
+  }
+
+  /**
+  * @brief Fired when the chooser has been shown
+  */
+  void on_show()
+  {
   }
 
   /**
@@ -1871,7 +1963,7 @@ private:
     chi.flags = 0;
     chi.width = -1;
     chi.height = -1;
-    chi.title = STR_GS_PANEL;
+    chi.title = TITLE_GS_PANEL;
     chi.obj = this;
     chi.columns = qnumber(widths);
     chi.widths = widths;
@@ -1889,7 +1981,6 @@ private:
     chi.select      = s_select;
     chi.edit        = s_edit;
     chi.initializer = s_initializer;
-
 
     chi.popup_names = (const char **)qalloc(sizeof(char *) * 5);
     *(((char **)chi.popup_names)+0) = "Load bbgroup file"; // Insert
@@ -1913,6 +2004,7 @@ public:
 
     gsgv = NULL;
     gm = NULL;
+    idm_save_bbfile = -1;
   }
 
   /**
@@ -1997,8 +2089,27 @@ public:
       singleton = new gschooser_t();
 
     choose3(&singleton->chi);
-    set_dock_pos(STR_GS_PANEL, STR_OUTWIN_TITLE, DP_RIGHT);
+    singleton->on_show();
+    set_dock_pos(TITLE_GS_PANEL, STR_OUTWIN_TITLE, DP_RIGHT);
     set_dock_pos(STR_GS_VIEW, STR_IDAVIEWA_TITLE, DP_INSIDE);
+  }
+
+  /**
+  * @brief Add a chooser menu
+  */
+  inline bool add_menu(
+      const char *name, 
+      chooser_cb_t cb,
+      const char *hotkey = NULL)
+  {
+    return add_chooser_command(
+              TITLE_GS_PANEL,
+              name,
+              cb,
+              hotkey,
+              -1,
+              -1,
+              CHOOSER_POPUP_MENU);
   }
 };
 gschooser_t *gschooser_t::singleton = NULL;
