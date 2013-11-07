@@ -60,8 +60,16 @@ History
                                 - Added  ngid_to_sg(ngid) utility function to do ngid to containing SG lookup
                                 - Added gsgv_actions_t to allow better interfacing between GSGV and GSCH
                                 - Added Jump to next highlighted/selected nodes
-								- Added save bbgroup functionality
-								- Added chooser on_show() event (not used now)
+                                - Added save bbgroup functionality
+                                - Added chooser on_show() event -> show copyright message on start
+11/06/2013 - eliasb             - Added select all
+                                - Added graph layout selection
+                                - Added focus_node after a group or split operation
+                                - Added Promote nodes
+                                - Added "Move nodes to their own NGs"
+                                - Added "Merge highlight with selection"
+								- Added "Jump to next highlight" / "Selection"
+								- Added chooser menu -> show graph (in case the graph was closed)
 */
 
 #pragma warning(disable: 4018 4800)
@@ -83,6 +91,7 @@ History
 
 //--------------------------------------------------------------------------
 static const char STR_CANNOT_BUILD_F_FC[] = "Cannot build function flowchart!";
+static const char STR_PLGNAME[]           = "GraphSlick";
 static const char TITLE_GS_PANEL[]        = "Graph Slick - Panel";
 static const char STR_GS_VIEW[]           = "Graph Slick - View";
 static const char STR_OUTWIN_TITLE[]      = "Output window";
@@ -147,11 +156,29 @@ struct gsoptions_t
   bool debug;
 
   /**
+  * @brief Graph layout
+  */
+  layout_type_t graph_layout;
+
+  /**
   * @brief GraphSlick start up view mode
   */
   gvrefresh_modes_e start_view_mode;
 
-  //--------------------------------------------------------------------------
+  /**
+  * @brief Constructor
+  */
+  gsoptions_t()
+  {
+    manual_refresh_mode = true;
+    append_node_id = false;
+    highlight_syntethic_nodes = false;
+    show_options_dialog_next_time = true;
+    enlarge_group_name = true;
+    start_view_mode = gvrfm_combined_mode;//gvrfm_single_mode;
+    debug = true;
+    graph_layout = layout_orthogonal;
+  }
 
   /**
   * @brief Show the options dialog
@@ -167,13 +194,6 @@ struct gsoptions_t
   void load_options()
   {
     //TODO: load from netnode
-    manual_refresh_mode = true;
-    append_node_id = false;
-    highlight_syntethic_nodes = false;
-    show_options_dialog_next_time = true;
-    enlarge_group_name = true;
-    start_view_mode = gvrfm_combined_mode; // gvrfm_single_mode;
-    debug = true;
   }
 
   /**
@@ -215,6 +235,11 @@ public:
   int cur_node;
 
   /**
+  * @brief Node to focus on after a group/split
+  */
+  int focus_node;
+
+  /**
   * @brief Pointer to the graph viewer
   */
   graph_viewer_t  *gv;
@@ -251,15 +276,20 @@ private:
   gsgv_actions_t *actions;
 
   /**
-  * @brief View mode menu items
+  * @brief Menu item IDs
   */
   int idm_single_view_mode, idm_combined_view_mode;
 
-  int idm_clear_sel, idm_clear_highlight;
+  int idm_clear_sel, idm_clear_highlight, idm_select_all;
+  int idm_merge_highlight_with_selection;
   int idm_jump_next_selected_node, idm_jump_next_highlighted_node;
   int idm_set_sel_mode;
 
   int idm_edit_sg_desc;
+  int idm_change_graph_layout;
+
+  int idm_remove_nodes_from_group;
+  int idm_promote_node_groups;
 
   int idm_test;
   int idm_highlight_similar, idm_find_highlight;
@@ -291,6 +321,31 @@ private:
   }
 
   /**
+  * @brief Static graph callback
+  */
+  static int idaapi _gr_callback(
+      void *ud, 
+      int code, va_list va)
+  {
+    return ((gsgraphview_t *)ud)->gr_callback(code, va);
+  }
+
+  /**
+  * @brief Displays an error when a node is not found!
+  */
+  void msg_err_node_not_found(int nid=0)
+  {
+    if (options->debug)
+      msg(STR_GS_MSG "Error, node(%d) not found!\n", nid);
+  }
+
+  void msg_unk_mode()
+  {
+    if (options->debug)
+      msg(STR_GS_MSG "Unknown mode\n");
+  }
+
+  /**
   * @brief Menu items handler
   */
   void on_menu(int menu_id)
@@ -308,6 +363,13 @@ private:
     else if (menu_id == idm_clear_highlight)
     {
       clear_highlighting(options->manual_refresh_mode);
+    }
+    //
+    // Select all nodes
+    //
+    else if (menu_id == idm_select_all)
+    {
+      select_all_nodes();
     }
     //
     // Selection mode change
@@ -353,6 +415,31 @@ private:
       find_and_highlight_nodes(options->manual_refresh_mode);
     }
     //
+    // Change the current graph layout
+    //
+    else if (menu_id == idm_change_graph_layout)
+    {
+      int code = askbuttons_c(
+        "Circle", // YES
+        "Tree",   // NO
+        "Digraph", // CANCEL
+        ASKBTN_YES, 
+        "Please select layout type");
+      switch (code)
+      {
+        case ASKBTN_YES:
+          options->graph_layout = layout_circle;
+          break;
+        case ASKBTN_NO:
+          options->graph_layout = layout_tree;
+          break;
+        case ASKBTN_CANCEL:
+          options->graph_layout = layout_digraph;
+          break;
+      }
+      redo_layout(cur_view_mode);
+    }
+    //
     // Edit supergroup description
     //
     else if (menu_id == idm_edit_sg_desc)
@@ -365,7 +452,7 @@ private:
         return;
       }
 
-      psupergroup_t sg = ngid_to_sg(cur_node);
+      psupergroup_t sg = get_sg_from_ngid(cur_node);
       if (sg == NULL)
         return;
 
@@ -380,40 +467,13 @@ private:
     //
     else if (menu_id == idm_combine_ngs)
     {
-      //
-      if (cur_view_mode != gvrfm_combined_mode)
-      {
-        msg(STR_GS_MSG "Groupping is only available in combined mode\n");
-        return;
-      }
-
       if (selected_nodes.size() <= 1)
       {
         msg(STR_GS_MSG "Not enough selected nodes\n");
         return;
       }
 
-      //
-      // Make a nodegroup list off the selection
-      //
-      nodegroup_list_t ngl;
-      for (ncolormap_t::iterator it = selected_nodes.begin();
-           it != selected_nodes.end();
-           ++it)
-      {
-        // Get the other selected NG
-        pnodegroup_t ng = get_ng_from_ngid(it->first);
-        ngl.push_back(ng);
-      }
-
-      // Combine the selected NGLs
-      gm->combine_ngl(&ngl);
-
-      // Refresh the chooser
-      actions->notify_refresh(true);
-
-      // Re-layout
-      redo_layout(cur_view_mode);
+      combine_node_groups();
     }
     //
     // Jump to next selected node
@@ -430,20 +490,36 @@ private:
       jump_to_next_node(it_highlighted_node, highlighted_nodes);
     }
     //
+    // Remove nodes from a node group into their own individual node groups
+    //
+    else if (menu_id == idm_remove_nodes_from_group)
+    {
+      move_nodes_to_own_ng();
+    }
+    //
+    // Merge highlight with selection
+    //
+    else if (menu_id == idm_merge_highlight_with_selection)
+    {
+      merge_highlight_with_selection();
+    }
+    //
+    // Merge highlight with selection
+    //
+    else if (menu_id == idm_promote_node_groups)
+    {
+      promote_node_groups_to_sgs();
+    }
+    //
     // Test: interactive groupping
     //
     else if (menu_id == idm_test)
     {
-      if (selected_nodes.empty())
-        return;
+      selected_nodes.clear();
+      selected_nodes[5] = NODE_SEL_COLOR;
+      selected_nodes[1] = NODE_SEL_COLOR;
 
-      // End? Rewind
-      if (it_selected_node == selected_nodes.end())
-        it_selected_node = selected_nodes.begin();
-
-      jump_to_node(gv, it_selected_node->first);
-
-      ++it_selected_node;
+      on_menu(idm_combine_ngs);
     }
   }
 
@@ -464,24 +540,6 @@ private:
     }
   }
 #endif
-
-  /**
-  * @brief Return node data
-  */
-  gnode_t *get_node(int nid)
-  {
-    return node_map.get(nid);
-  }
-
-  /**
-  * @brief Static graph callback
-  */
-  static int idaapi _gr_callback(
-      void *ud, 
-      int code, va_list va)
-  {
-    return ((gsgraphview_t *)ud)->gr_callback(code, va);
-  }
 
   /**
   * @brief Graph callback
@@ -581,7 +639,11 @@ private:
           // Clear previous graph node data
           mg->clear();
           reset_states();
-		  
+
+          mg->current_layout = options->graph_layout;
+          mg->circle_center = point_t(200, 200);
+          mg->circle_radius = 100;
+
           // Remember the current graph mode
           // NOTE: we remember the state only if not 'soft'. 
           //       Otherwise it will screw up all the logic that rely on its value
@@ -592,7 +654,10 @@ private:
             switch_to_single_view_mode(mg);
           else if (refresh_mode == gvrfm_combined_mode)
             switch_to_combined_view_mode(mg);
+          else
+            msg_unk_mode();
         }
+        mg->redo_layout();
         result = 1;
         break;
       }
@@ -683,19 +748,24 @@ private:
   }
 
   /**
-  * @brief Convert a node group id to a nodegroup instance
+  * @brief Resets state variables upon view mode change
   */
-  pnodegroup_t get_ng_from_ngid(int ngid)
+  void reset_states()
   {
-    //TODO: PERFORMANCE: make a lookup table if needed
-    for (ng2nid_t::iterator it=ng2id.begin();
-         it != ng2id.end();
-         ++it)
-    {
-      if (it->second == ngid)
-        return it->first;
-    }
-    return NULL;
+    // Clear node information
+    node_map.clear();
+    ng2id.clear();
+
+    // Clear highlight / selected
+    highlighted_nodes.clear();
+    selected_nodes.clear();
+
+    // Clear highlight / selection iterators
+    it_selected_node = selected_nodes.end();
+    it_highlighted_node = highlighted_nodes.end();
+
+    // No node is selected
+    cur_node = -1;
   }
 
   /**
@@ -726,65 +796,119 @@ private:
 public:
 
   /**
-  * @brief Refresh the current screen and the visible nodes (not the layout)
+  * @brief Return graph view node id from an actual node id
   */
-  void refresh_view()
+  int get_gvnid_from_nid(int nid)
   {
-    refresh_mode = gvrfm_single_mode;
-    //TODO: HACK: trigger a window to show/hide so IDA repaints the nodes
+    if (cur_view_mode == gvrfm_single_mode)
+      return nid;
+    
+    nodeloc_t *loc = gm->find_nodeid_loc(nid);
+    // Get the other selected NG
+    if (loc == NULL)
+      return -1;
+    else
+      return ng2id.get_ng_id(loc->ng);
   }
 
   /**
-  * @brief Set refresh mode and issue a refresh
+  * @brief Return supergroup for which a nodegroup_id belongs to
   */
-  void redo_layout(gvrefresh_modes_e rm)
+  psupergroup_t get_sg_from_ngid(int ngid)
   {
-    refresh_mode = rm;
-    refresh_viewer(gv);
-
+    // The current node is a node group id
+    // Convert ngid to a node id
+    pnodegroup_t ng = get_ng_from_ngid(cur_node);
+    if (ng == NULL)
+      return NULL;
+    else
+      return get_sg_from_ng(ng);
   }
 
   /**
-  * @brief Edit the description of a super group
+  * @brief Convert a node group id to a nodegroup instance
   */
-  bool edit_sg_description(psupergroup_t sg)
+  pnodegroup_t get_ng_from_ngid(int ngid)
   {
-    const char *desc = askstr(
-      HIST_CMT,
-      sg->get_display_name(STR_DUMMY_SG_NAME),
-      "Please enter new description");
-
-    if (desc == NULL)
-      return false;
-
-    // Adjust the name
-    sg->name = desc;
-
-    // From the super group, get all individual node groups
-    for (nodegroup_list_t::iterator it=sg->groups.begin();
-         it != sg->groups.end();
+    //TODO: PERFORMANCE: make a lookup table if needed
+    for (ng2nid_t::iterator it=ng2id.begin();
+         it != ng2id.end();
          ++it)
     {
-      // Get the group node id from the node group reference
-      pnodegroup_t ng = *it;
-      int ngid = get_ng_id(ng);
-      if (ngid == -1)
-        continue;
-
-      gnode_t *gnode = get_node(ngid);
-      if (gnode == NULL)
-        continue;;
-
-      // Update the node display text
-      // TODO: PERFORMANCE: can you have gnode link to a groupman related structure and pull its
-      //                    text dynamically?
-      gnode->text = sg->get_display_name();
+      if (it->second == ngid)
+        return it->first;
     }
+    return NULL;
+  }
 
-    if (!options->manual_refresh_mode)
+  /**
+  * @brief Return node data
+  */
+  inline gnode_t *get_node(int nid)
+  {
+    return node_map.get(nid);
+  }
+
+  /**
+  * @brief Return a node id corresponding to the given node group. 
+  *        The current view mode is respected
+  */
+  inline int get_ngid_from_ng(pnodegroup_t ng)
+  {
+    if (ng != NULL)
+    {
+      if (cur_view_mode == gvrfm_combined_mode)
+      {
+	    // Get the nodegroup id from the map
+        return ng2id.get_ng_id(ng);
+      }
+      else if (cur_view_mode == gvrfm_single_mode)
+      {
+	    // Just get the node id of the first node definition in the node group
+        pnodedef_t nd = ng->get_first_node();
+        return nd == NULL ? -1 : nd->nid;
+      }
+    }
+    if (options->debug)
+      msg(STR_GS_MSG "Could not find gr_nid for %p\n", ng);
+    return -1;
+  }
+
+  /**
+  * @brief Return the super group that hosts the NG
+  */
+  psupergroup_t get_sg_from_ng(pnodegroup_t ng)
+  {
+    pnodedef_t nd = ng->get_first_node();
+    if (nd == NULL)
+      return NULL;
+
+    nodeloc_t *loc = gm->find_nodeid_loc(nd->nid);
+    if (loc == NULL)
+      return NULL;
+    else
+      return loc->sg;
+  }
+  /**
+  * @brief Clear the selection
+  */
+  void clear_selection(bool delay_refresh)
+  {
+    selected_nodes.clear();
+    it_selected_node = selected_nodes.end();
+    if (!delay_refresh)
       refresh_view();
+  }
 
-    return true;
+  /**
+  * @brief Clear the highlighted nodes
+  */
+  void clear_highlighting(bool delay_refresh)
+  {
+    highlighted_nodes.clear();
+    it_highlighted_node = highlighted_nodes.end();
+    if (!delay_refresh)
+      refresh_view();
   }
 
   /**
@@ -800,7 +924,7 @@ public:
     // Combined mode?
     if (cur_view_mode == gvrfm_combined_mode)
     {
-      int gr_nid = get_ng_id(ng);
+      int gr_nid = get_ngid_from_ng(ng);
       if (gr_nid == -1)
         return false;
 
@@ -828,36 +952,40 @@ public:
     // Unknown mode
     else
     {
+      msg_unk_mode();
       return false;
     }
 
     // In delayed refresh mode, just print what we plan to highlight
     if (delay_refresh)
     {
-      // Just print
-      msg(STR_GS_MSG "Lazy highlight( ");
-      size_t t = newly_colored.size();
-      for (intset_t::iterator it=newly_colored.begin();
-            it != newly_colored.end();
-            ++it)
+      if (options->debug)
       {
-        int nid = *it;
-        if (cur_view_mode == gvrfm_single_mode)
+        // Just print
+        msg(STR_GS_MSG "Lazy highlight( ");
+        size_t t = newly_colored.size();
+        for (intset_t::iterator it=newly_colored.begin();
+              it != newly_colored.end();
+              ++it)
         {
-          pnodedef_t nd = (*gm->get_nds())[nid];
-          if (nd == NULL)
-            continue;
+          int nid = *it;
+          if (cur_view_mode == gvrfm_single_mode)
+          {
+            pnodedef_t nd = (*gm->get_nds())[nid];
+            if (nd == NULL)
+              continue;
 
-          msg("%d : %a : %a ", nd->nid, nd->start, nd->end);
-          if (--t > 0)
-            msg(", ");
+            msg("%d : %a : %a ", nd->nid, nd->start, nd->end);
+            if (--t > 0)
+              msg(", ");
+          }
+          else
+          {
+            msg("%d ", nid);
+          }
         }
-        else
-        {
-          msg("%d ", nid);
-        }
+        msg(")\n");
       }
-      msg(")\n");
     }
     // Refresh immediately
     else
@@ -947,86 +1075,469 @@ public:
       refresh_view();
   }
 
-
   /**
-  * @brief Set the actions variable
+  * @brief Highlight nodes similar to the selection
   */
-  inline void set_callback(gsgv_actions_t *actions)
+  void highlight_similar_selection(bool delay_refresh)
   {
-    this->actions = actions;
+    if (selected_nodes.empty())
+      return;
+
+    //TODO: highlight the similar selection
+    msg(STR_GS_MSG "Not implemented yet!\n");
   }
 
   /**
-  * @brief Clear the selection
+  * @brief Select all nodes
   */
-  void clear_selection(bool delay_refresh)
+  void select_all_nodes()
   {
     selected_nodes.clear();
-    it_selected_node = selected_nodes.end();
-    if (!delay_refresh)
-      refresh_view();
-  }
-
-  /**
-  * @brief Clear the highlighted nodes
-  */
-  void clear_highlighting(bool delay_refresh)
-  {
-    highlighted_nodes.clear();
-    it_highlighted_node = highlighted_nodes.end();
-    if (!delay_refresh)
-      refresh_view();
-  }
-
-  /**
-  * @brief Creates and shows the graph
-  */
-  static gsgraphview_t *show_graph(
-    qflow_chart_t *func_fc,
-    groupman_t *gm,
-    gsoptions_t *options)
-  {
-    // Loop twice: 
-    // - (1) Create the graph and exit or close it if it was there 
-    // - (2) Re create graph due to last step
-    for (int init=0; init<2; init++)
+    for (nid2ndef_t::iterator it = gm->get_nds()->begin();
+          it != gm->get_nds()->end();
+          ++it)
     {
-      HWND hwnd = NULL;
-      TForm *form = create_tform(STR_GS_VIEW, &hwnd);
-      if (hwnd != NULL)
+      selected_nodes[it->second->nid] = NODE_SEL_COLOR;
+    }
+  }
+
+  /**
+  * @brief Toggle node selection
+  */
+  void toggle_select_node(
+          int cur_node, 
+          bool delay_refresh)
+  {
+    ncolormap_t::iterator p = selected_nodes.find(cur_node);
+    if (p == selected_nodes.end())
+      selected_nodes[cur_node] = NODE_SEL_COLOR;
+    else
+      selected_nodes.erase(p);
+
+    // With quick selection mode, just display a message and don't force a refresh
+    if (delay_refresh)
+    {
+      msg(STR_GS_MSG "Selected %d\n", cur_node);
+    }
+    else
+    {
+      // Refresh the graph to reflect selection
+      refresh_view();
+    }
+  }
+
+  /**
+  * @brief Find and highlights nodes
+  */
+  void find_and_highlight_nodes(bool delay_refresh)
+  {
+    static char last_pattern[MAXSTR] = {0};
+
+    const char *pattern = askstr(HIST_SRCH, last_pattern, STR_SEARCH_PROMPT);
+    if (pattern == NULL)
+      return;
+
+    // Remember last search
+    qstrncpy(
+        last_pattern, 
+        pattern, 
+        sizeof(last_pattern));
+
+    DECL_CG;
+
+    clear_highlighting(true);
+
+    pnodegroup_list_t groups = NULL;
+
+    // Walk all the groups
+    psupergroup_listp_t sgroups = gm->get_path_sgl();
+    for (supergroup_listp_t::iterator it=sgroups->begin();
+         it != sgroups->end();
+         ++it)
+    {
+      psupergroup_t sg = *it;
+      if (    stristr(sg->name.c_str(), pattern) != NULL
+           || stristr(sg->id.c_str(), pattern) != NULL )
       {
-        // get a unique graph id
-        netnode id;
-        qstring title;
-        title.sprnt("$ GS %s", func_fc->title.c_str());
-        id.create(title.c_str());
+        groups = &sg->groups;
+        highlight_nodes(
+          groups, 
+          cg, 
+          true);
+      }
+    }
 
-        // Create a graph object
-        gsgraphview_t *gsgv = new gsgraphview_t(func_fc, options);
+    // Refresh graph if at least there is one match
+    if (!delay_refresh)
+	{
+      refresh_view();
+      if (groups == NULL)
+        return;
+	}
 
-        // Assign the groupmanager instance
-        gsgv->gm = gm;
+    int nid;
+    pnodegroup_t ng = groups->get_first_ng();
+    nid = ng == NULL ? -1 : get_ngid_from_ng(ng);
 
-        // Create the graph control
-        graph_viewer_t *gv = create_graph_viewer(
-          form,  
-          id, 
-          gsgv->_gr_callback, 
-          gsgv, 
-          0);
+    if (nid != -1)
+    {
+      jump_to_node(
+        gv, 
+        nid);
+    }
+  }
 
-        open_tform(form, FORM_TAB|FORM_MENU|FORM_QWIDGET);
-        if (gv != NULL)
-          gsgv->init(gv, form);
+  /**
+  * @brief Merge the highlighted nodes with the selection. End result is more selection coming from highlight
+  */
+  void merge_highlight_with_selection()
+  {
+    for (ncolormap_t::iterator it=highlighted_nodes.begin();
+         it != highlighted_nodes.end();
+         ++it)
+    {
+      if (selected_nodes.find(it->first) != selected_nodes.end())
+        continue;
+      else
+      {
+        selected_nodes[it->first] = NODE_SEL_COLOR;
+      }
+    }
+  }
 
-        return gsgv;
+  /**
+  * @brief Jumps to next item in the container
+  */
+  void jump_to_next_node(ncolormap_t::iterator &it, ncolormap_t &cont)
+  {
+    if (cont.empty())
+      return;
+
+    // End? Rewind
+    if (it == cont.end())
+      it = cont.begin();
+
+    jump_to_node(gv, it->first);
+
+    // Advance to next match
+    ++it;
+  }
+
+  /**
+  * @brief Combine node groups
+  */
+  void combine_node_groups()
+  {
+    pnodegroup_t new_ng = NULL;
+    if (cur_view_mode == gvrfm_combined_mode)
+    {
+      //
+      // Make a nodegroup list from the selection
+      //
+      nodegroup_list_t ngl;
+      for (ncolormap_t::iterator it = selected_nodes.begin();
+           it != selected_nodes.end();
+           ++it)
+      {
+        // Get the other selected NG
+        pnodegroup_t ng = get_ng_from_ngid(it->first);
+        ngl.push_back(ng);
+      }
+
+      // Combine the selected NGLs
+      new_ng = gm->combine_ngl(&ngl);
+    }
+    else if (cur_view_mode == gvrfm_single_mode)
+    {
+      nodegroup_t ng;
+      for (ncolormap_t::iterator it = selected_nodes.begin();
+           it != selected_nodes.end();
+           ++it)
+      {
+        // Find node structure
+        nodeloc_t *loc = gm->find_nodeid_loc(it->first);
+        if (loc == NULL)
+        {
+          msg_err_node_not_found();
+          continue;
+        }
+        ng.add_node(loc->nd);
+      }
+      // Move the nodes from various NGs to a single NG
+      new_ng = gm->move_nodes_to_ng(&ng);
+    }
+
+    // Edit the newly combined SG
+    if (new_ng != NULL)
+    {
+      psupergroup_t sg = get_sg_from_ng(new_ng);
+      edit_sg_description(sg);
+
+      pnodedef_t nd = new_ng->get_first_node();;
+      if (nd != NULL)
+        focus_node = nd->nid;
+    }
+
+    // Refresh the chooser
+    actions->notify_refresh(true);
+
+    // Re-layout
+    redo_layout(cur_view_mode);
+  }
+
+  /**
+  * @brief Promote selected NGs to their own super groups
+  */
+  void promote_node_groups_to_sgs()
+  {
+    nodegroup_list_t ngs;
+    std::map<pnodegroup_t, psupergroup_t> found_ng;
+    pnodegroup_t  ng;
+    psupergroup_t sg;
+    for (ncolormap_t::iterator it=selected_nodes.begin();
+         it != selected_nodes.end();
+         ++it)
+    {
+      if (cur_view_mode == gvrfm_single_mode)
+      {
+        nodeloc_t *loc = gm->find_nodeid_loc(it->first);
+        if (loc == NULL)
+        {
+          msg_err_node_not_found();
+          continue;
+        }
+        ng = loc->ng;
+        sg = loc->sg;
+      }
+      else if (cur_view_mode == gvrfm_combined_mode)
+      {
+        ng = get_ng_from_ngid(it->first);
+        if (ng == NULL)
+          continue;
+        sg = get_sg_from_ng(ng);
       }
       else
       {
-        close_tform(form, 0);
+        msg_unk_mode();
+        continue;
+      }
+      found_ng[ng] = sg;
+    }
+
+    // Now we have the NGs and their corresponding SGs
+    while (!found_ng.empty())
+    {
+      // Take the first value set
+      ng = found_ng.begin()->first;
+      sg = found_ng.begin()->second;
+
+      // Remove first element
+      found_ng.erase(found_ng.begin());
+
+      // SG has one NG? Most likely this is the same SG and NG, leave alone
+      if (sg->gcount() == 1)
+        continue;
+
+      // Remove NG from the current SG
+      sg->remove_nodegroup(ng, false);
+
+      // Make a new SG
+      psupergroup_t new_sg = gm->add_supergroup(gm->get_path_sgl());
+      new_sg->copy_attr_from(sg);
+      new_sg->add_nodegroup(ng);
+
+      // Allow the user to edit the new SG
+      edit_sg_description(new_sg);
+    }
+
+    // Reinitialize lookup tables
+    gm->initialize_lookups();
+
+    // Refresh the chooser; no need to re-do layout though
+    actions->notify_refresh(true);
+
+    if (!options->manual_refresh_mode)
+      refresh_view();
+  }
+
+  /**
+  * @brief Move all nodes in selected node groups and put each ND into its own NG
+  *        The SG of the node will remain the same
+  */
+  void move_nodes_to_own_ng()
+  {
+    if (selected_nodes.empty())
+    {
+      msg(STR_GS_MSG "No selection!\n");
+      return;
+    }
+      
+    //TODO: VERIFY: When find similar is applied, then this should work too
+
+    if (cur_view_mode == gvrfm_single_mode)
+    {
+      // For each ND, directly take it out from its parent NG and put it in its own NG in the same SG
+      // If the NG have one node and this node is self, then do nothing
+      for (ncolormap_t::iterator it = selected_nodes.begin();
+           it != selected_nodes.end();
+           ++it)
+      {
+        nodeloc_t *loc = gm->find_nodeid_loc(it->first);
+        if (loc == NULL)
+        {
+          msg_err_node_not_found();
+          return;
+        }
+        // This node is the only one in the NG
+        if (loc->ng->size() == 1)
+          continue;
+
+        // Now move the node out
+        loc->ng->remove(loc->nd);
+
+        // Create a new node group in the SG and add the node to it
+        loc->sg->add_nodegroup()->add_node(loc->nd);
+
+        // Remember a focus node
+        focus_node = loc->nd->nid;
       }
     }
-    return NULL;
+    else if (cur_view_mode == gvrfm_combined_mode)
+    {
+      // In combined mode, each node is an NG
+      // Take each node out of the NG and put in the NG's SG
+      for (ncolormap_t::iterator it = selected_nodes.begin();
+           it != selected_nodes.end();
+           ++it)
+      {
+        // Get the select NG
+        pnodegroup_t ng = get_ng_from_ngid(it->first);
+        if (ng == NULL || ng->size() == 1)
+          continue;
+
+        // Get any first node (to determine SG)
+        pnodedef_t nd = ng->get_first_node();
+        if (nd == NULL)
+          continue;
+
+        // Get the loc -> SG
+        nodeloc_t *loc = gm->find_nodeid_loc(nd->nid);
+        psupergroup_t sg = loc->sg;
+        if (sg == NULL)
+          continue;
+
+        // Take out each ND in this NG
+        while (ng->size() > 1)
+        {
+          nd = ng->back();
+          ng->pop_back();
+
+          sg->add_nodegroup()->add_node(nd);
+
+          // Remember a focus node
+          focus_node = nd->nid;
+        }
+      }
+    }
+
+    // Reinitialize lookup tables
+    gm->initialize_lookups();
+
+    // Refresh the chooser; no need to re-do layout though
+    actions->notify_refresh(true);
+
+    // Re-layout
+    redo_layout(cur_view_mode);
+  }
+
+  /**
+  * @brief Edit the description of a super group
+  */
+  bool edit_sg_description(psupergroup_t sg)
+  {
+    const char *desc;
+    
+    while (true)
+    {
+      desc = askstr(
+        HIST_CMT,
+        sg->get_display_name(STR_DUMMY_SG_NAME),
+        "Please enter new description");
+
+      if (desc == NULL)
+        return false;
+
+      if (   strchr(desc, ')') != NULL 
+          || strchr(desc, '(') != NULL
+          || strchr(desc, ':') != NULL
+          || strchr(desc, ';') != NULL)
+      {
+        warning("The name cannot contain the following characters: '();:'");
+        continue;
+      }
+      break;
+    }
+
+    // Adjust the name
+    sg->name = desc;
+
+    // From the super group, get all individual node groups
+    for (nodegroup_list_t::iterator it=sg->groups.begin();
+         it != sg->groups.end();
+         ++it)
+    {
+      // Get the group node id from the node group reference
+      pnodegroup_t ng = *it;
+      int ngid = get_ngid_from_ng(ng);
+      if (ngid == -1)
+        continue;
+
+      gnode_t *gnode = get_node(ngid);
+      if (gnode == NULL)
+        continue;;
+
+      // Update the node display text
+      // TODO: PERFORMANCE: can you have gnode link to a groupman related structure and pull its
+      //                    text dynamically?
+      gnode->text = sg->get_display_name();
+    }
+
+    if (!options->manual_refresh_mode)
+      refresh_view();
+
+    return true;
+  }
+
+  /**
+  * @brief Switch to combined view mode
+  */
+  void switch_to_single_view_mode(mutable_graph_t *mg)
+  {
+    msg(STR_GS_MSG "Switching to single mode view...");
+    func_to_mgraph(
+      BADADDR, 
+      mg, 
+      node_map, 
+      func_fc,
+      options->append_node_id);
+    msg("done\n");
+  }
+
+  /**
+  * @brief Switch to combined view mode
+  */
+  void switch_to_combined_view_mode(mutable_graph_t *mg)
+  {
+    msg(STR_GS_MSG "Switching to combined mode view...");
+    fc_to_combined_mg(
+      BADADDR, 
+      gm, 
+      node_map, 
+      ng2id, 
+      mg, 
+      func_fc);
+
+    msg("done\n");
   }
 
   /**
@@ -1093,19 +1604,88 @@ public:
   }
 
   /**
-  * @brief Constructor
+  * @brief Refresh the current screen and the visible nodes (not the layout)
   */
-  gsgraphview_t(qflow_chart_t *func_fc, gsoptions_t *options): func_fc(func_fc), options(options)
+  void refresh_view()
   {
-    gv = NULL;
-    form = NULL;
-    refresh_mode = options->start_view_mode;
-    set_callback(NULL);
+    refresh_mode = gvrfm_single_mode;
+    //TODO: HACK: trigger a window to show/hide so IDA repaints the nodes
+  }
 
-    in_sel_mode = false;
-    cur_node = -1;
-    idm_set_sel_mode = -1;
-    idm_edit_sg_desc = -1;
+  /**
+  * @brief Set refresh mode and issue a refresh
+  */
+  void redo_layout(gvrefresh_modes_e rm)
+  {
+    refresh_mode = rm;
+    refresh_viewer(gv);
+    if (focus_node != -1)
+    {
+      focus_node = get_gvnid_from_nid(focus_node);
+      if (focus_node != -1)
+        jump_to_node(gv, focus_node);
+      focus_node = -1;
+    }
+
+  }
+
+  /**
+  * @brief Set the actions variable
+  */
+  inline void set_callback(gsgv_actions_t *actions)
+  {
+    this->actions = actions;
+  }
+
+  /**
+  * @brief Creates and shows the graph
+  */
+  static gsgraphview_t *show_graph(
+    qflow_chart_t *func_fc,
+    groupman_t *gm,
+    gsoptions_t *options)
+  {
+    // Loop twice: 
+    // - (1) Create the graph and exit or close it if it was there 
+    // - (2) Re create graph due to last step
+    for (int init=0; init<2; init++)
+    {
+      HWND hwnd = NULL;
+      TForm *form = create_tform(STR_GS_VIEW, &hwnd);
+      if (hwnd != NULL)
+      {
+        // get a unique graph id
+        netnode id;
+        qstring title;
+        title.sprnt("$ GS %s", func_fc->title.c_str());
+        id.create(title.c_str());
+
+        // Create a graph object
+        gsgraphview_t *gsgv = new gsgraphview_t(func_fc, options);
+
+        // Assign the groupmanager instance
+        gsgv->gm = gm;
+
+        // Create the graph control
+        graph_viewer_t *gv = create_graph_viewer(
+          form,  
+          id, 
+          gsgv->_gr_callback, 
+          gsgv, 
+          0);
+
+        open_tform(form, FORM_TAB|FORM_MENU|FORM_QWIDGET);
+        if (gv != NULL)
+          gsgv->init(gv, form);
+
+        return gsgv;
+      }
+      else
+      {
+        close_tform(form, 0);
+      }
+    }
+    return NULL;
   }
 
   /**
@@ -1123,37 +1703,43 @@ public:
     //
 
     add_menu("-");
-    idm_show_options                 = add_menu("Show options",                   "O");
+    idm_show_options                  = add_menu("Show options",                    "O");
 
     // Highlighting / selection actions
     add_menu("-");
-    idm_clear_sel                    = add_menu("Clear selection",                "D");
-    idm_clear_highlight              = add_menu("Clear highlighting",             "H");
+    idm_clear_sel                      = add_menu("Clear selection",                "D");
+    idm_clear_highlight                = add_menu("Clear highlighting",             "H");
+    idm_select_all                     = add_menu("Select all",                     "A");
+    idm_merge_highlight_with_selection = add_menu("Merge highlight with selection", "V");
 
     // Cycling in selected/highlited nodes
-    idm_jump_next_highlighted_node   = add_menu("Jump to next highlighted node",  "J");
-    idm_jump_next_selected_node      = add_menu("Jump to next selected node",     "K");
+    idm_jump_next_highlighted_node    = add_menu("Jump to next highlighted node",   "J");
+    idm_jump_next_selected_node       = add_menu("Jump to next selected node",      "K");
 
     // Switch view mode actions
     add_menu("-");
-    idm_single_view_mode             = add_menu("Switch to ungroupped view",      "U");
-    idm_combined_view_mode           = add_menu("Switch to groupped view",        "G");
+    idm_change_graph_layout           = add_menu("Change graph layout");
+    idm_single_view_mode              = add_menu("Switch to ungroupped view",       "U");
+    idm_combined_view_mode            = add_menu("Switch to groupped view",         "G");
 
     // Experimental actions
     add_menu("-");
-    idm_test                         = add_menu("Test",                           "Q");
+    idm_test                          = add_menu("Test",                            "Q");
 
     // Searching actions
     add_menu("-");
-    idm_highlight_similar            = add_menu("Highlight similar nodes",        "M");
-    idm_find_highlight               = add_menu("Find group",                     "F");
+    idm_highlight_similar             = add_menu("Highlight similar nodes",         "M");
+    idm_find_highlight                = add_menu("Find group",                      "F");
 
+    //
     // Groupping actions
 
-    idm_combine_ngs                  = add_menu("Combine nodes",                  "C");
+    idm_combine_ngs                   = add_menu("Combine nodes",                   "C");
+    idm_remove_nodes_from_group       = add_menu("Move node(s) to their own group", "R");
+    idm_promote_node_groups           = add_menu("Promote node group",              "P");
 
-    // Add the edit group description menu
-    idm_edit_sg_desc                 = add_menu("Edit group description");
+    // Edit group description menu
+    idm_edit_sg_desc                  = add_menu("Edit group description",          "E");
 
     //
     // Dynamic menu items
@@ -1165,219 +1751,22 @@ public:
   }
 
   /**
-  * @brief Toggle node selection
+  * @brief Constructor
   */
-  void toggle_select_node(
-          int cur_node, 
-          bool delay_refresh)
+  gsgraphview_t(qflow_chart_t *func_fc, gsoptions_t *options): func_fc(func_fc), options(options)
   {
-    ncolormap_t::iterator p = selected_nodes.find(cur_node);
-    if (p == selected_nodes.end())
-      selected_nodes[cur_node] = NODE_SEL_COLOR;
-    else
-      selected_nodes.erase(p);
+    gv = NULL;
+    form = NULL;
+    refresh_mode = options->start_view_mode;
+    set_callback(NULL);
 
-    // With quick selection mode, just display a message and don't force a refresh
-    if (delay_refresh)
-    {
-      msg(STR_GS_MSG "Selected %d\n", cur_node);
-    }
-    else
-    {
-      // Refresh the graph to reflect selection
-      refresh_view();
-    }
-  }
-
-  /**
-  * @brief Highlight nodes similar to the selection
-  */
-  void highlight_similar_selection(bool delay_refresh)
-  {
-    if (selected_nodes.empty())
-      return;
-
-    //TODO: highlight the similar selection
-    msg(STR_GS_MSG "Not implemented yet!\n");
-  }
-
-  /**
-  * @brief Find and highlights nodes
-  */
-  void find_and_highlight_nodes(bool delay_refresh)
-  {
-    static char last_pattern[MAXSTR] = {0};
-
-    const char *pattern = askstr(HIST_SRCH, last_pattern, STR_SEARCH_PROMPT);
-    if (pattern == NULL)
-      return;
-
-    // Remember last search
-    qstrncpy(
-        last_pattern, 
-        pattern, 
-        sizeof(last_pattern));
-
-    DECL_CG;
-
-    clear_highlighting(true);
-
-    pnodegroup_list_t groups = NULL;
-
-    // Walk all the groups
-    psupergroup_listp_t sgroups = gm->get_path_sgl();
-    for (supergroup_listp_t::iterator it=sgroups->begin();
-         it != sgroups->end();
-         ++it)
-    {
-      psupergroup_t sg = *it;
-      if (    stristr(sg->name.c_str(), pattern) != NULL
-           || stristr(sg->id.c_str(), pattern) != NULL )
-      {
-        groups = &sg->groups;
-        highlight_nodes(
-          groups, 
-          cg, 
-          true);
-      }
-    }
-
-    // Refresh graph if at least there is one match
-    if (!delay_refresh)
-	{
-      refresh_view();
-      if (groups == NULL)
-        return;
-	}
-
-    int nid;
-    pnodegroup_t ng = groups->get_first_ng();
-    nid = ng == NULL ? -1 : get_ng_id(ng);
-
-    if (nid != -1)
-    {
-      jump_to_node(
-        gv, 
-        nid);
-    }
-  }
-
-  /**
-  * @brief Return supergroup for which a nodegroup_id belongs to
-  */
-  psupergroup_t ngid_to_sg(int ngid)
-  {
-    // The current node is a node group id
-    // Convert ngid to a node id
-    pnodegroup_t ng = get_ng_from_ngid(cur_node);
-    if (ng == NULL)
-      return NULL;
-
-    pnodedef_t nd = ng->get_first_node();
-    if (nd == NULL)
-      return NULL;
-
-    nodeloc_t *loc = gm->find_nodeid_loc(nd->nid);
-    if (loc == NULL)
-      return NULL;
-    else
-      return loc->sg;
-  }
-
-  /**
-  * @brief Return a node id corresponding to the given node group. 
-  *        The current view mode is respected
-  */
-  inline int get_ng_id(pnodegroup_t ng)
-  {
-    if (ng != NULL)
-    {
-      if (cur_view_mode == gvrfm_combined_mode)
-      {
-	    // Get the nodegroup id from the map
-        return ng2id.get_ng_id(ng);
-      }
-      else if (cur_view_mode == gvrfm_single_mode)
-      {
-	    // Just get the node id of the first node definition in the node group
-        pnodedef_t nd = ng->get_first_node();
-        return nd == NULL ? -1 : nd->nid;
-      }
-    }
-    if (options->debug)
-      msg(STR_GS_MSG "Could not find gr_nid for %p\n", ng);
-    return -1;
-  }
-
-  /**
-  * @brief Resets state variables upon view mode change
-  */
-  void reset_states()
-  {
-    // Clear node information
-    node_map.clear();
-    ng2id.clear();
-
-    // Clear highlight / selected
-    highlighted_nodes.clear();
-    selected_nodes.clear();
-
-    // Clear highlight / selection iterators
-    it_selected_node = selected_nodes.end();
-    it_highlighted_node = highlighted_nodes.end();
-
-    // No node is selected
+    focus_node = -1;
+    in_sel_mode = false;
     cur_node = -1;
+    idm_set_sel_mode = -1;
+    idm_edit_sg_desc = -1;
   }
 
-  /**
-  * @brief Switch to combined view mode
-  */
-  void switch_to_single_view_mode(mutable_graph_t *mg)
-  {
-    msg(STR_GS_MSG "Switching to single mode view...");
-    func_to_mgraph(
-      BADADDR, 
-      mg, 
-      node_map, 
-      func_fc,
-      options->append_node_id);
-    msg("done\n");
-  }
-
-  /**
-  * @brief Switch to combined view mode
-  */
-  void switch_to_combined_view_mode(mutable_graph_t *mg)
-  {
-    msg(STR_GS_MSG "Switching to combined mode view...");
-    fc_to_combined_mg(
-      BADADDR, 
-      gm, 
-      node_map, 
-      ng2id, 
-      mg, 
-      func_fc);
-
-    msg("done\n");
-  }
-
-  /**
-  * @brief Jumps to next item in the container
-  */
-  void jump_to_next_node(ncolormap_t::iterator &it, ncolormap_t &cont)
-  {
-    if (cont.empty())
-      return;
-
-    // End? Rewind
-    if (it == cont.end())
-      it = cont.begin();
-
-    jump_to_node(gv, it->first);
-
-    ++it;
-  }
 };
 gsgraphview_t::idmenucbtx_t gsgraphview_t::menu_ids;
 
@@ -1437,6 +1826,7 @@ private:
   gsoptions_t options;
 
   int idm_save_bbfile;
+  int idm_show_graph;
 
   static uint32 idaapi s_sizer(void *obj)
   {
@@ -1511,6 +1901,20 @@ private:
     return;
   }
 
+  static uint32 idaapi s_onmenu_show_graph(void *obj, uint32 n)
+  {
+    ((gschooser_t *)obj)->onmenu_show_graph();
+    return n;
+  }
+
+  /**
+  * @brief Show the graph again if it was closed
+  */
+  void onmenu_show_graph()
+  {
+    if (gsgv == NULL)
+      show_graph();
+  }
 
   /**
   * @brief Delete the singleton instance if applicable
@@ -1712,7 +2116,7 @@ private:
     if (ng != NULL)
     {
       // Select the current node
-      int nid = gsgv->get_ng_id(ng);
+      int nid = gsgv->get_ngid_from_ng(ng);
       if (nid != -1)
         jump_to_node(gsgv->gv, nid);
     }
@@ -1828,6 +2232,23 @@ private:
   }
 
   /**
+  * @brief Show the GraphView (if it was closed)
+  */
+  bool show_graph()
+  {
+    // Show the graph
+    gsgv = gsgraphview_t::show_graph(
+      &func_fc, 
+      gm, 
+      &options);
+    if (gsgv == NULL)
+      return false;
+
+    gsgv->set_callback(this);
+    return true;
+  }
+
+  /**
   * @brief Load and display a bbgroup file
   */
   bool load_file_show_graph(const char *filename)
@@ -1843,15 +2264,7 @@ private:
     if (!load_file(filename))
       return false;
 
-    // Show the graph
-    gsgv = gsgraphview_t::show_graph(
-              &func_fc, 
-              gm, 
-              &options);
-    if (gsgv == NULL)
-      return false;
-
-    gsgv->set_callback(this);
+    show_graph();
 
     // Remember last loaded file
     last_loaded_file = filename;
@@ -1929,6 +2342,7 @@ private:
   {
     // Chooser was shown, now create a menu item
     idm_save_bbfile = add_menu("Save bbgroup file", s_onmenu_save_bbfile, "Ctrl-S");
+    idm_show_graph  = add_menu("Show graph", s_onmenu_show_graph);
 #ifdef _DEBUG
     const char *fn;
     
@@ -1937,9 +2351,10 @@ private:
 
     //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\main.bbgroup";
     //fn = "P:\\Tools\\idadev\\plugins\\workfile-1.bbgroup";
-    fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\f1.bbgroup";
+    //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\f1.bbgroup";
     //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\doit.bbgroup";
     //fn = "c:\\temp\\x.bbgroup";
+    fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\f2.bbgroup";
     load_file_show_graph(fn);
 #endif
   }
@@ -1949,6 +2364,10 @@ private:
   */
   void on_show()
   {
+    msg("********************************************************************************\n"
+        "%s (built on " __DATE__ " " __TIME__ ")\n"
+        "********************************************************************************\n", 
+        STR_PLGNAME);
   }
 
   /**
@@ -2005,6 +2424,7 @@ public:
     gsgv = NULL;
     gm = NULL;
     idm_save_bbfile = -1;
+    idm_show_graph = -1;
   }
 
   /**
@@ -2159,6 +2579,6 @@ plugin_t PLUGIN =
 
   "",                   // multiline help about the plugin
 
-  "GraphSlick",         // the preferred short name of the plugin
+  STR_PLGNAME,          // the preferred short name of the plugin
   "Ctrl-4"              // the preferred hotkey to run the plugin
 };
