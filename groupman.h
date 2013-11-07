@@ -16,6 +16,8 @@ It also provides the group management class.
 //--------------------------------------------------------------------------
 #include <pro.h>
 #include <set>
+#include <list>
+#include <map>
 
 //--------------------------------------------------------------------------
 struct nodedef_t
@@ -34,7 +36,7 @@ typedef nodedef_t *pnodedef_t;
 /**
 * @brief A list of nodes making up a group
 */
-class nodegroup_t: public qlist<pnodedef_t>
+class nodegroup_t: public std::list<pnodedef_t>
 {
 public:
   void free_nodes();
@@ -70,7 +72,7 @@ typedef std::map<int, pnodedef_t> nid2ndef_t;
 /**
 * @brief nodegroups type is a list of nodegroup type
 */
-class nodegroup_list_t: public qlist<pnodegroup_t>
+class nodegroup_list_t: public std::list<pnodegroup_t>
 {
 public:
   void free_nodegroup(bool free_nodes);
@@ -97,6 +99,7 @@ typedef nodegroup_list_t *pnodegroup_list_t;
 */
 struct supergroup_t
 {
+public:
   /**
   * @brief Super group ID
   */
@@ -132,9 +135,15 @@ struct supergroup_t
   pnodegroup_t add_nodegroup(pnodegroup_t ng = NULL);
 
   /**
-  * @brief TODO: check me
+  * @brief Removes a nodegroup from the SG list
   */
-  bool remove_nodegroup(pnodegroup_t ng);
+  void remove_nodegroup(pnodegroup_t ng, bool free_ng);
+
+  /**
+  * @brief Copy attributes from the SG to this SG
+  *        The synthetic attribute is removed from both SGs
+  */
+  void copy_attr_from(supergroup_t *sg);
 
   /**
   * @brief Return the count of defined groups
@@ -166,13 +175,18 @@ struct supergroup_t
 typedef supergroup_t *psupergroup_t;
 
 //--------------------------------------------------------------------------
-class supergroup_listp_t: public qlist<psupergroup_t>
+class supergroup_listp_t: public std::list<psupergroup_t>
 {
 public:
   /**
   * @brief Copy this SGL to the desired one
   */
   void copy_to(psupergroup_t dest);
+
+  /**
+  * @brief Remove a super group and frees it if needed
+  */
+  void remove_sg(psupergroup_t sg, bool free_sg);
 };
 
 typedef supergroup_listp_t *psupergroup_listp_t;
@@ -228,7 +242,7 @@ private:
   /**
   * @brief A lookup table for all node definitions
   */
-  nid2ndef_t all_nds;
+  nid2ndef_t all_nodes;
 
   /**
   * @brief Private copy constructor
@@ -269,7 +283,7 @@ public:
   /**
   * @brief All the node defs
   */
-  inline nid2ndef_t *get_nds() { return &all_nds; }
+  inline nid2ndef_t *get_nds() { return &all_nodes; }
 
   /**
   * @ctor Default constructor
@@ -309,7 +323,16 @@ public:
     const char *filename, 
     bool init_cache = true);
 
+  /**
+  * @brief Combine the list of NGL into a single NG
+  */
   pnodegroup_t combine_ngl(pnodegroup_list_t ngl);
+
+  /**
+  * @brief Move nodes coming from various NGs to a single NG
+  *        The new NG will reside in the first node's SG
+  */
+  pnodegroup_t move_nodes_to_ng(pnodegroup_t ng);
 
   /**
   * @brief Find a node location by ID
