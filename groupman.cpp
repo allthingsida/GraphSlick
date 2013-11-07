@@ -26,6 +26,7 @@ History
                                 - fixed bug in emit file function: neither nodeset key nor group name were emitted
 11/05/2013 - eliasb             - use std::list<> instead of qlist<> because list.remove() exists already (and also STL could be better)
 11/06/2013 - eliasb             - added 'remove_sg', 'move_nodes_to_ng'
+                                - added 'reset_groupping'
 --------------------------------------------------------------------------*/
 
 #include "groupman.h"
@@ -245,6 +246,7 @@ groupman_t::~groupman_t()
 void groupman_t::clear()
 {
   clear_sgl(&path_sgl);
+  clear_sgl(&similar_sgl);
   all_nodes.clear();
 }
 
@@ -415,22 +417,11 @@ psupergroup_t groupman_t::add_supergroup(
 }
 
 //--------------------------------------------------------------------------
-bool groupman_t::remove_supergroup(
+void groupman_t::remove_supergroup(
       psupergroup_listp_t sgl,
       psupergroup_t sg)
 {
-  for (supergroup_listp_t::iterator it=sgl->begin();
-       it != sgl->end();
-       ++it)
-  {
-    psupergroup_t f_sg = *it;
-    if (f_sg == sg)
-    {
-      sgl->erase(it);
-      return true;
-    }
-  }
-  return false;
+  sgl->remove(sg);
 }
 
 //--------------------------------------------------------------------------
@@ -709,4 +700,49 @@ bool groupman_t::parse(
     initialize_lookups();
 
   return true;
+}
+
+//--------------------------------------------------------------------------
+void groupman_t::reset_groupping()
+{
+  // ALGO
+  // -------
+  // TODO: The clear() and destructor is confusing and complicated. Simplify
+  //
+  // Go from SGL to SG to NGL to NG and clear references to node definitions
+  psupergroup_listp_t sgl = &path_sgl;
+  for (supergroup_listp_t::iterator it=sgl->begin(); 
+       it != sgl->end();
+       ++it)
+  {
+    psupergroup_t sg = *it;
+
+    for (nodegroup_list_t::iterator it=sg->groups.begin();
+         it != sg->groups.end();
+         ++it)
+    {
+      pnodegroup_t ng = *it;
+      // Clear the node definitions -> no more ND references
+      ng->clear();
+    }
+  }
+  
+  // Properly clear the SGL which eventually have no nodes
+  clear_sgl(sgl);
+
+  // Now repopulate from all_nodes
+  for (nid2ndef_t::iterator it=all_nodes.begin();
+       it != all_nodes.end();
+       ++it)
+  {
+    psupergroup_t sg = add_supergroup(sgl);  
+    pnodegroup_t  ng = sg->add_nodegroup();
+    pnodedef_t    nd = it->second;
+    
+    ng->add_node(nd);
+    sg->id.sprnt("node%d", nd->nid);
+  }
+
+  // Reinitialize lookups
+  initialize_lookups();
 }

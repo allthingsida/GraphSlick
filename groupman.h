@@ -307,9 +307,13 @@ public:
     psupergroup_listp_t sgl,
     psupergroup_t sg = NULL);
 
-  bool remove_supergroup(
+  /**
+  * @brief Remove a super group
+  */
+  void remove_supergroup(
     psupergroup_listp_t sgl,
     psupergroup_t sg);
+
   /**
   * @brief Rewrites the structure from memory back to a file
   * @param filename - the output file name
@@ -333,6 +337,11 @@ public:
   *        The new NG will reside in the first node's SG
   */
   pnodegroup_t move_nodes_to_ng(pnodegroup_t ng);
+
+  /**
+  * @brief Move all nodes to their own SG/NG
+  */
+  void reset_groupping();
 
   /**
   * @brief Find a node location by ID

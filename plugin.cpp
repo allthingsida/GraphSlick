@@ -68,8 +68,9 @@ History
                                 - Added Promote nodes
                                 - Added "Move nodes to their own NGs"
                                 - Added "Merge highlight with selection"
-								- Added "Jump to next highlight" / "Selection"
-								- Added chooser menu -> show graph (in case the graph was closed)
+                                - Added "Jump to next highlight" / "Selection"
+                                - Added chooser menu -> show graph (in case the graph was closed)
+                                - Added "Reset groupping"
 */
 
 #pragma warning(disable: 4018 4800)
@@ -290,6 +291,7 @@ private:
 
   int idm_remove_nodes_from_group;
   int idm_promote_node_groups;
+  int idm_reset_groupping;
 
   int idm_test;
   int idm_highlight_similar, idm_find_highlight;
@@ -511,15 +513,30 @@ private:
       promote_node_groups_to_sgs();
     }
     //
+    // Reset groupping
+    //
+    else if (menu_id == idm_reset_groupping)
+    {
+      gm->reset_groupping();
+
+      // Refresh the chooser
+      actions->notify_refresh(true);
+
+      // Re-layout
+      redo_layout(cur_view_mode);
+    }
+    //
     // Test: interactive groupping
     //
     else if (menu_id == idm_test)
     {
-      selected_nodes.clear();
-      selected_nodes[5] = NODE_SEL_COLOR;
-      selected_nodes[1] = NODE_SEL_COLOR;
+      gm->reset_groupping();
 
-      on_menu(idm_combine_ngs);
+      // Refresh the chooser
+      actions->notify_refresh(true);
+
+      // Re-layout
+      redo_layout(cur_view_mode);
     }
   }
 
@@ -1356,8 +1373,8 @@ public:
     // Refresh the chooser; no need to re-do layout though
     actions->notify_refresh(true);
 
-    if (!options->manual_refresh_mode)
-      refresh_view();
+    // Re-layout
+    redo_layout(cur_view_mode);
   }
 
   /**
@@ -1737,6 +1754,7 @@ public:
     idm_combine_ngs                   = add_menu("Combine nodes",                   "C");
     idm_remove_nodes_from_group       = add_menu("Move node(s) to their own group", "R");
     idm_promote_node_groups           = add_menu("Promote node group",              "P");
+    idm_reset_groupping               = add_menu("Reset groupping",                 "T");
 
     // Edit group description menu
     idm_edit_sg_desc                  = add_menu("Edit group description",          "E");
