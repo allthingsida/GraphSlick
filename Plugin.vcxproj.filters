@@ -6,6 +6,7 @@
     <ClCompile Include="util.cpp" />
     <ClCompile Include="algo.cpp" />
     <ClCompile Include="colorgen.cpp" />
+    <ClCompile Include="pybbmatcher.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\allins.hpp">
@@ -165,6 +166,8 @@
     <ClInclude Include="util.h" />
     <ClInclude Include="algo.hpp" />
     <ClInclude Include="colorgen.h" />
+    <ClInclude Include="pybbmatcher.h" />
+    <ClInclude Include="pywraps.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="sdk">
