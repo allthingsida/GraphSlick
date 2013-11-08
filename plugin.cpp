@@ -71,6 +71,8 @@ History
                                 - Added "Jump to next highlight" / "Selection"
                                 - Added chooser menu -> show graph (in case the graph was closed)
                                 - Added "Reset groupping"
+11/07/2013 - eliasb             - Removed the Orthogonal layout was not implemented in IDA <=6.4, causing a "not yet" messages
+                                - Added initial Python adapter code
 */
 
 #pragma warning(disable: 4018 4800)
@@ -80,10 +82,12 @@ History
 #include <graph.hpp>
 #include <loader.hpp>
 #include <kernwin.hpp>
+#include <diskio.hpp>
 #include "groupman.h"
 #include "util.h"
 #include "algo.hpp"
 #include "colorgen.h"
+#include "pybbmatcher.h"
 
 //--------------------------------------------------------------------------
 #define MY_TABSTR "    "
@@ -99,6 +103,7 @@ static const char STR_OUTWIN_TITLE[]      = "Output window";
 static const char STR_IDAVIEWA_TITLE[]    = "IDA View-A";
 static const char STR_SEARCH_PROMPT[]     = "Please enter search string";
 static const char STR_DUMMY_SG_NAME[]     = "No name";
+static const char STR_GS_PY_PLGFILE[]     = "GraphSlick\\init.py";
 
 //--------------------------------------------------------------------------
 typedef std::map<int, bgcolor_t> ncolormap_t;
@@ -178,7 +183,7 @@ struct gsoptions_t
     enlarge_group_name = true;
     start_view_mode = gvrfm_combined_mode;//gvrfm_single_mode;
     debug = true;
-    graph_layout = layout_orthogonal;
+    graph_layout = layout_digraph;
   }
 
   /**
@@ -1846,6 +1851,8 @@ private:
   int idm_save_bbfile;
   int idm_show_graph;
 
+  PyBBMatcher *py_matcher;
+
   static uint32 idaapi s_sizer(void *obj)
   {
     return ((gschooser_t *)obj)->on_get_size();
@@ -2386,6 +2393,9 @@ private:
         "%s (built on " __DATE__ " " __TIME__ ")\n"
         "********************************************************************************\n", 
         STR_PLGNAME);
+
+    set_dock_pos(TITLE_GS_PANEL, STR_OUTWIN_TITLE, DP_RIGHT);
+    set_dock_pos(STR_GS_VIEW, STR_IDAVIEWA_TITLE, DP_INSIDE);
   }
 
   /**
@@ -2443,6 +2453,7 @@ public:
     gm = NULL;
     idm_save_bbfile = -1;
     idm_show_graph = -1;
+    py_matcher = NULL;
   }
 
   /**
@@ -2451,6 +2462,7 @@ public:
   ~gschooser_t()
   {
     //NOTE: IDA will close the chooser for us and thus the destroy callback will be called
+    delete py_matcher;
   }
 
   /**
@@ -2519,17 +2531,46 @@ public:
   }
 
   /**
+  * @brief Initialize the Python matcher
+  */
+  bool init_python()
+  {
+    char init_script[MAXSTR];
+
+    qmakepath(init_script, sizeof(init_script), idadir(PLG_SUBDIR), STR_GS_PY_PLGFILE, NULL);
+
+    py_matcher = new PyBBMatcher(init_script);
+    const char *err = py_matcher->init();
+    if (err != NULL)
+    {
+      msg(STR_GS_MSG "Error: %s\n", err);
+      delete py_matcher;
+      py_matcher = NULL;
+      return false;
+    }
+    return true;
+  }
+
+  /**
   * @brief Show the chooser
   */
-  static void show()
+  static bool show()
   {
     if (singleton == NULL)
+    {
       singleton = new gschooser_t();
+      if (!singleton->init_python())
+      {
+        delete singleton;
+        singleton = NULL;
+        return false;
+      }
+    }
 
     choose3(&singleton->chi);
     singleton->on_show();
-    set_dock_pos(TITLE_GS_PANEL, STR_OUTWIN_TITLE, DP_RIGHT);
-    set_dock_pos(STR_GS_VIEW, STR_IDAVIEWA_TITLE, DP_INSIDE);
+
+    return true;
   }
 
   /**
