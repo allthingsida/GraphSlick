@@ -16,17 +16,7 @@ This module implements various utility functions
 #include <funcs.hpp>
 #include <gdl.hpp>
 #include <graph.hpp>
-
-//--------------------------------------------------------------------------
-/**
-* @brief Node data class. It will be served from the graph callback
-*/
-struct gnode_t
-{
-  int id;
-  qstring text;
-  qstring hint;
-};
+#include "types.hpp"
 
 //--------------------------------------------------------------------------
 /**
