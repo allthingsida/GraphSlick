@@ -251,3 +251,38 @@ bool PyW_PyListListToIntVecVec(PyObject *py_list, int_2dvec_t &result)
   cvt_t cvt(result);
   return pyvar_walk_list(py_list, cvt_t::cb, &cvt) != CIP_FAILED;
 }
+
+//--------------------------------------------------------------------------
+bool PyW_PyListListToIntVecVecVec(PyObject *py_list, int_3dvec_t &result)
+{
+  class cvt_t
+  {
+  private:
+    int_3dvec_t &v;
+  public:
+    cvt_t(int_3dvec_t &v): v(v)
+    {
+    }
+
+    static int cb(
+        PyObject *py_item, 
+        Py_ssize_t index, 
+        void *ud)
+    {
+      cvt_t *_this = (cvt_t *)ud;
+
+      // Declare an empty 2D list
+      int_2dvec_t lst;
+
+      // Push it immediately to the vector (to avoid double copies)
+      _this->v.push_back(lst);
+
+      // Now convert the inner list directly into the vector
+      PyW_PyListListToIntVecVec(py_item, _this->v.back());
+
+      return CIP_OK;
+    }
+  };
+  cvt_t cvt(result);
+  return pyvar_walk_list(py_list, cvt_t::cb, &cvt) != CIP_FAILED;
+}
