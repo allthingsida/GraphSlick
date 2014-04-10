@@ -48,6 +48,107 @@ bool func_to_mgraph(
 }
 
 //--------------------------------------------------------------------------
+void build_groupman_from_fc(
+    qflow_chart_t *fc,
+    groupman_t *gm,
+    bool sanitize)
+{
+  // Clear previous groupman contents
+  gm->clear();
+
+  gm->src_filename = "noname.bbgroup";
+
+  // Resize the graph
+  int nodes_count = fc->size();
+
+  // Build groupman
+  for (int nid=0; nid < nodes_count; nid++)
+  {
+    qbasic_block_t &block = fc->blocks[nid];
+
+    psupergroup_t sg = gm->add_supergroup();
+    sg->id.sprnt("ID_%d", nid);
+    sg->name.sprnt("SG_%d", nid);
+    sg->is_synthetic = false;
+
+    pnodegroup_t ng = sg->add_nodegroup();
+    pnodedef_t   nd = ng->add_node();
+
+    nd->nid = nid;
+    nd->start = block.startEA;
+    nd->end = block.endEA;
+
+    gm->map_nodedef(nid, nd);
+  }
+
+  if (sanitize)
+  {
+    if (sanitize_groupman(BADADDR, gm, fc))
+      gm->initialize_lookups();
+  }
+}
+
+//--------------------------------------------------------------------------
+void build_groupman_from_3dvec(
+  qflow_chart_t *fc,
+  int_3dvec_t &path,
+  groupman_t *gm,
+  bool sanitize)
+{
+  // Clear previous groupman contents
+  gm->clear();
+
+  gm->src_filename = "noname.bbgroup";
+
+  // Build groupman
+  int sg_id = 0;
+  for (int_3dvec_t::iterator it_sg=path.begin();
+       it_sg != path.end();
+       ++it_sg, ++sg_id)
+  {
+    // Build super group
+    psupergroup_t sg = gm->add_supergroup();
+
+    sg->id.sprnt("ID_%d", sg_id);
+    sg->name.sprnt("SG_%d", sg_id);
+    sg->is_synthetic = false;
+
+    // Build SG
+    int_2dvec_t &ng_vec = *it_sg;
+    for (int_2dvec_t::iterator it_ng= ng_vec.begin();
+         it_ng != ng_vec.end();
+         ++it_ng)
+    {
+      // Build NG
+      pnodegroup_t ng = sg->add_nodegroup();
+      intvec_t &nodes_vec = *it_ng;
+
+      // Build nodes
+      for (intvec_t::iterator it_nd = nodes_vec.begin();
+           it_nd != nodes_vec.end();
+           ++it_nd)
+      {
+        int nid = *it_nd;
+        qbasic_block_t &block = fc->blocks[nid];
+
+        pnodedef_t nd = ng->add_node();
+        nd->nid = nid;
+        nd->start = block.startEA;
+        nd->end = block.endEA;
+
+        gm->map_nodedef(nid, nd);
+      }
+    }
+  }
+
+  if (sanitize)
+  {
+    if (sanitize_groupman(BADADDR, gm, fc))
+      gm->initialize_lookups();
+  }
+}
+
+//--------------------------------------------------------------------------
 bool sanitize_groupman(
   ea_t func_ea,
   groupman_t *gm,
@@ -67,17 +168,13 @@ bool sanitize_groupman(
 
   int nodes_count = fc->size();
 
-  // Get a reference to all the nodedefs
   nid2ndef_t *nds = gm->get_nds();
-
   // Verify that all nodes are present
   for (int n=0; n < nodes_count; n++)
   {
-    // Is this node already parsed/defined?
     nid2ndef_t::iterator it = nds->find(n);
     if (it != nds->end())
       continue;
-
     // Convert basic block to an ND
     qbasic_block_t &block = fc->blocks[n];
     pnodedef_t nd = new nodedef_t();

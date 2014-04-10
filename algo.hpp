@@ -22,6 +22,8 @@ History
                         - functions don't compute flowchart each time now. user can pass a flowchart
                         - added sanitize_groupman() to allow loaded incomplete bbgroup file						
 11/01/2013 - eliasb     - Now sanitize_groupman()' sanitized the path SGL only
+                        - Added build_groupman_from_fc and build_groupman_from_3dvec functions
+04/10/2014 - eliasb     - fix: Auto increment SG number when building the info from BBMatch!Analyze()
 --------------------------------------------------------------------------*/
 
 
@@ -224,6 +226,25 @@ bool func_to_mgraph(
     gnodemap_t &node_map,
     qflow_chart_t *fc = NULL,
     bool append_node_id = false);
+
+//--------------------------------------------------------------------------
+/**
+* @brief Build the groupman with each node in its node group and super group
+*/
+void build_groupman_from_fc(
+  qflow_chart_t *fc,
+  groupman_t *gm,
+  bool sanitize);
+
+//--------------------------------------------------------------------------
+/**
+* @brief Build the group manager from another groupman defined in a 3d int vec
+*/
+void build_groupman_from_3dvec(
+  qflow_chart_t *fc,
+  int_3dvec_t &path,
+  groupman_t *gm,
+  bool sanitize);
 
 //--------------------------------------------------------------------------
 /**
