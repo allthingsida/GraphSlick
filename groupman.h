@@ -90,6 +90,11 @@ public:
   * @brief Find the biggest node group (i.e: with the highest ND count)
   */
   pnodegroup_t find_biggest();
+
+  /**
+  * @brief Add a nodegroup to the list
+  */
+  pnodegroup_t add_nodegroup(pnodegroup_t ng = NULL);
 };
 typedef nodegroup_list_t *pnodegroup_list_t;
 
@@ -225,11 +230,6 @@ private:
   nid2nloc_map_t nid2loc;
 
   /**
-  * @brief File name that was last loaded
-  */
-  qstring filename;
-
-  /**
   * @brief Path super groups definition
   */
   supergroup_listp_t path_sgl;
@@ -271,6 +271,11 @@ private:
 public:
 
   /**
+  * @brief File name that was last loaded
+  */
+  qstring src_filename;
+
+  /**
   * @brief Method to initialize lookups
   */
   void initialize_lookups();
@@ -283,7 +288,10 @@ public:
   /**
   * @brief All the node defs
   */
-  inline nid2ndef_t *get_nds() { return &all_nodes; }
+  inline nid2ndef_t *get_nds() 
+  { 
+    return &all_nodes; 
+  }
 
   /**
   * @ctor Default constructor
@@ -301,10 +309,18 @@ public:
   void clear();
 
   /**
+  * @brief Remember the node definition
+  */
+  inline void map_nodedef(int nid, pnodedef_t nd) 
+  { 
+    all_nodes[nid] = nd; 
+  }
+
+  /**
   * @brief Add a new super group
   */
   psupergroup_t add_supergroup(
-    psupergroup_listp_t sgl,
+    psupergroup_listp_t sgl = NULL,
     psupergroup_t sg = NULL);
 
   /**
@@ -318,7 +334,9 @@ public:
   * @brief Rewrites the structure from memory back to a file
   * @param filename - the output file name
   */
-  bool emit(const char *filename);
+  bool emit(
+    const char *filename, 
+    const char *additional_sections = NULL);
 
   /**
   * @brief Parse groups definition file
@@ -326,6 +344,12 @@ public:
   bool parse(
     const char *filename, 
     bool init_cache = true);
+
+  
+  /**
+  * @brief A group manager is considered empty if it has no path information
+  */
+  inline bool empty() { return path_sgl.empty(); }
 
   /**
   * @brief Combine the list of NGL into a single NG
@@ -352,11 +376,6 @@ public:
   * @brief Find a node by an address
   */
   nodeloc_t *find_node_loc(ea_t ea);
-
-  /**
-  * @brief Return the file name that was used to load this group manager
-  */
-  const char *get_source_file();
 
   /**
   * @brief Returns one node definition from the data structure

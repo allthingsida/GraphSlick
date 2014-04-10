@@ -27,6 +27,7 @@ History
 11/05/2013 - eliasb             - use std::list<> instead of qlist<> because list.remove() exists already (and also STL could be better)
 11/06/2013 - eliasb             - added 'remove_sg', 'move_nodes_to_ng'
                                 - added 'reset_groupping'
+                                - added added nodegroup_list_t.add_nodegroup()
 --------------------------------------------------------------------------*/
 
 #include "groupman.h"
@@ -97,6 +98,17 @@ pnodegroup_t nodegroup_list_t::find_biggest()
       ng = ng_f;
     }
   }
+  return ng;
+}
+
+//--------------------------------------------------------------------------
+pnodegroup_t nodegroup_list_t::add_nodegroup(pnodegroup_t ng)
+{
+  if (ng == NULL)
+    ng = new nodegroup_t();
+
+  push_back(ng);
+
   return ng;
 }
 
@@ -320,12 +332,6 @@ pnodedef_t groupman_t::get_first_nd()
 }
 
 //--------------------------------------------------------------------------
-const char *groupman_t::get_source_file()
-{
-  return filename.c_str();
-}
-
-//--------------------------------------------------------------------------
 bool groupman_t::parse_nodeset(
       psupergroup_t sg,
       char *grpstr)
@@ -365,7 +371,7 @@ bool groupman_t::parse_nodeset(
       nd->end = end;
 
       // Map this node
-      all_nodes[nid] = nd;
+      map_nodedef(nid, nd);
     }
   }
   return true;
@@ -409,6 +415,9 @@ psupergroup_t groupman_t::add_supergroup(
     psupergroup_listp_t sgl,
     psupergroup_t sg)
 {
+  if (sgl == NULL)
+    sgl = get_path_sgl();
+
   if (sg == NULL)
     sg = new supergroup_t();
 
@@ -582,7 +591,9 @@ void groupman_t::emit_sgl(
 }
 
 //--------------------------------------------------------------------------
-bool groupman_t::emit(const char *filename)
+bool groupman_t::emit(
+        const char *filename, 
+        const char *additional_sections)
 {
   FILE *fp = qfopen(filename, "w");
   if (fp == NULL)
@@ -590,6 +601,13 @@ bool groupman_t::emit(const char *filename)
 
   qfprintf(fp, "--%s\n", STR_PATHINFO);
   emit_sgl(fp, &path_sgl);
+
+  qfprintf(fp, "--%s\n", STR_SIMILARINFO);
+  emit_sgl(fp, &similar_sgl);
+
+  // Emit additional sections
+  if (additional_sections != NULL)
+    qfprintf(fp, "%s\n", additional_sections);
 
   qfclose(fp);
 
@@ -643,7 +661,7 @@ bool groupman_t::parse(
     return false;
 
   // Remember the opened file name
-  this->filename = filename;
+  this->src_filename = filename;
 
   // Clear previous items
   clear();
