@@ -19,13 +19,13 @@ History
                                 - Factored out many code into various modules
 10/24/2013 - eliasb             - Added proper coloring on selection (via colorgen class)
                                 - Factored out many code into various modules
-                 								- Fixed crash on re-opening the plugin chooser
+                 				- Fixed crash on re-opening the plugin chooser
 10/25/2013 - eliasb             - Refactored the code further
-								                - Renamed from grdata_t to a full graphview class (gsgraphview_t)
+								- Renamed from grdata_t to a full graphview class (gsgraphview_t)
                                 - Devised the graph context menu system
-								                - Added clear/toggle selection mode
-								                - Added graph view mode functionality
-								                - Dock the gsgraphview next to IDA-View
+                                - Added clear/toggle selection mode
+                                - Added graph view mode functionality
+                                - Dock the gsgraphview next to IDA-View
                                 - Factored out get_color_anyway() to the colorgen module
                                 - Proper support for node selection/coloring in single and combined mode
                                 - Change naming from chooser nodes to chooser line
@@ -73,6 +73,17 @@ History
                                 - Added "Reset groupping"
 11/07/2013 - eliasb             - Removed the Orthogonal layout was not implemented in IDA <=6.4, causing a "not yet" messages
                                 - Added initial Python adapter code
+
+TODO
+-----------
+
+[ ] Add chooser that shows only SGs so one can move an NG to the dest SG
+[ ] Ungroup -> move NDs to own SGs
+[ ] Add code to handle operations group/ungroup from chooser
+[ ] Expose the py::analyze function to chooser context menu
+[ ] Augment bbload to call py::load ; same for SAVE
+[ ] py::load should return
+[ ] bug: somehow ungroupping all nodes is not correct, when analyze is used -> i experienced a crash
 */
 
 #pragma warning(disable: 4018 4800)
@@ -136,6 +147,11 @@ struct gsoptions_t
   bool append_node_id;
 
   /**
+  * @brief Do not propose initial path information on Analyze()
+  */
+  bool no_initial_path_info;
+
+  /**
   * @brief Manual refresh view on selection/highlight
   */
   bool manual_refresh_mode;
@@ -181,9 +197,11 @@ struct gsoptions_t
     highlight_syntethic_nodes = false;
     show_options_dialog_next_time = true;
     enlarge_group_name = true;
-    start_view_mode = gvrfm_combined_mode;//gvrfm_single_mode;
+    start_view_mode = gvrfm_single_mode; //gvrfm_combined_mode;//gvrfm_single_mode;
     debug = true;
     graph_layout = layout_digraph;
+    //;!
+    no_initial_path_info = false;
   }
 
   /**
@@ -226,6 +244,11 @@ public:
   * @brief The GSGV content is refreshing
   */
   virtual void notify_refresh(bool hard_refresh = false) = 0;
+
+  /**
+  * @brief Find nodes similar to the highlighted ones
+  */
+  virtual pnodegroup_list_t find_similar(intvec_t &sel_nodes) = 0;
 };
 
 //--------------------------------------------------------------------------
@@ -479,7 +502,6 @@ private:
         msg(STR_GS_MSG "Not enough selected nodes\n");
         return;
       }
-
       combine_node_groups();
     }
     //
@@ -528,24 +550,33 @@ private:
       actions->notify_refresh(true);
 
       // Re-layout
-      redo_layout(cur_view_mode);
+      redo_current_layout();
     }
     //
     // Test: interactive groupping
     //
     else if (menu_id == idm_test)
     {
-      gm->reset_groupping();
+      selected_nodes.clear();
+      int sel[] = {1,3,4};
+      intvec_t sel_nodes;
+      for (int i=0;i<qnumber(sel);i++)
+      {
+        int nid = sel[i];
+        selected_nodes[nid] = NODE_SEL_COLOR;
+        sel_nodes.push_back(nid);
+      }
 
-      // Refresh the chooser
-      actions->notify_refresh(true);
+      pnodegroup_list_t ngl = actions->find_similar(sel_nodes);
 
-      // Re-layout
-      redo_layout(cur_view_mode);
+      DECL_CG;
+      highlight_nodes(ngl, cg, options->manual_refresh_mode);
+      ngl->free_nodegroup(false);
+      delete ngl;
     }
   }
 
-#ifdef _DEBUG
+#ifdef MY_DEBUG
   /**
   * @brief 
   * @param
@@ -580,6 +611,7 @@ private:
       {
         va_arg(va, graph_viewer_t *);
         selection_item_t *item1 = va_arg(va, selection_item_t *);
+
         va_arg(va, graph_item_t *);
         if (in_sel_mode && item1 != NULL && item1->is_node)
         {
@@ -1105,8 +1137,27 @@ public:
     if (selected_nodes.empty())
       return;
 
-    //TODO: highlight the similar selection
-    msg(STR_GS_MSG "Not implemented yet!\n");
+    if (cur_view_mode != gvrfm_single_mode)
+    {
+      msg(STR_GS_MSG "Only the single view mode is supported\n");
+      return;
+    }
+
+    // Convert selected nodes map to an intvec
+    intvec_t sel_nodes;
+    for (ncolormap_t::iterator it=selected_nodes.begin();
+         it != selected_nodes.end();
+         ++it)
+    {
+      sel_nodes.push_back(it->first);
+    }
+
+    pnodegroup_list_t ngl = actions->find_similar(sel_nodes);
+
+    DECL_CG;
+    highlight_nodes(ngl, cg, options->manual_refresh_mode);
+    ngl->free_nodegroup(false);
+    delete ngl;
   }
 
   /**
@@ -1116,8 +1167,8 @@ public:
   {
     selected_nodes.clear();
     for (nid2ndef_t::iterator it = gm->get_nds()->begin();
-          it != gm->get_nds()->end();
-          ++it)
+         it != gm->get_nds()->end();
+         ++it)
     {
       selected_nodes[it->second->nid] = NODE_SEL_COLOR;
     }
@@ -1304,7 +1355,7 @@ public:
     actions->notify_refresh(true);
 
     // Re-layout
-    redo_layout(cur_view_mode);
+    redo_current_layout();
   }
 
   /**
@@ -1379,7 +1430,7 @@ public:
     actions->notify_refresh(true);
 
     // Re-layout
-    redo_layout(cur_view_mode);
+    redo_current_layout();
   }
 
   /**
@@ -1469,7 +1520,7 @@ public:
     actions->notify_refresh(true);
 
     // Re-layout
-    redo_layout(cur_view_mode);
+    redo_current_layout();
   }
 
   /**
@@ -1649,6 +1700,14 @@ public:
       focus_node = -1;
     }
 
+  }
+
+  /**
+  * @brief Helper function to redo current layout
+  */
+  inline void redo_current_layout()
+  {
+    redo_layout(cur_view_mode);
   }
 
   /**
@@ -1848,9 +1907,6 @@ private:
   qflow_chart_t func_fc;
   gsoptions_t options;
 
-  int idm_save_bbfile;
-  int idm_show_graph;
-
   PyBBMatcher *py_matcher;
 
   static uint32 idaapi s_sizer(void *obj)
@@ -1909,6 +1965,24 @@ private:
     return n;
   }
 
+  static uint32 idaapi s_onmenu_show_graph(void *obj, uint32 n)
+  {
+    ((gschooser_t *)obj)->onmenu_show_graph();
+    return n;
+  }
+
+  static uint32 idaapi s_onmenu_analyze(void *obj, uint32 n)
+  {
+    ((gschooser_t *)obj)->onmenu_analyze();
+    return n;
+  }
+
+  static uint32 idaapi s_onmenu_auto_find_path(void *obj, uint32 n)
+  {
+    ((gschooser_t *)obj)->onmenu_analyze();
+    return n;
+  }
+
   /**
   * @brief Handle the save bbgroup menu command
   */
@@ -1922,19 +1996,63 @@ private:
     if (filename == NULL)
       return;
 
-    gm->emit(filename);
     return;
   }
 
-  static uint32 idaapi s_onmenu_show_graph(void *obj, uint32 n)
+  /**
+  * @brief TODO
+  */
+  void onmenu_analyze()
   {
-    ((gschooser_t *)obj)->onmenu_show_graph();
-    return n;
+    func_t *f = get_func(get_screen_ea());
+    if (f == NULL)
+    {
+      msg(STR_GS_MSG "No function at the cursor location!");
+      return;
+    }
+    
+    // Call Analyzer
+    int_3dvec_t result;
+    py_matcher->Analyze(f->startEA, result);
+    if (result.empty())
+    {
+      msg(STR_GS_MSG "Failed to analyze function at %a\n", f->startEA);
+      return;
+    }
+
+    if (!get_flowchart(f->startEA))
+      return;
+
+    /*RESET GROUPPING*/
+    if (options.no_initial_path_info)
+    {
+      // Retrieve initial groupping information
+      build_groupman_from_fc(&func_fc, gm, true);
+    }
+    else
+    {
+      // Build the groupping information from the analyze() result
+      build_groupman_from_3dvec(&func_fc, result, gm, true);
+    }
+
+    // Refresh the chooser
+    refresh(true);
+
+    if (gsgv == NULL)
+      show_graph();
+    else
+      gsgv->redo_current_layout();
   }
 
   /**
-  * @brief Show the graph again if it was closed
+  * @brief TODO
   */
+  void onmenu_auto_find_path()
+  {
+    if (gsgv == NULL)
+      show_graph();
+  }
+
   void onmenu_show_graph()
   {
     if (gsgv == NULL)
@@ -1985,7 +2103,7 @@ private:
       case chlt_gm:
       {
         if (col == 1)
-          *out = qbasename(node->gm->get_source_file());
+          *out = qbasename(node->gm->src_filename.c_str());
         break;
       }
       // Handle super groups
@@ -2261,6 +2379,9 @@ private:
   */
   bool show_graph()
   {
+    if (gm->empty())
+      return true;
+
     // Show the graph
     gsgv = gsgraphview_t::show_graph(
       &func_fc, 
@@ -2315,6 +2436,43 @@ private:
   }
 
   /**
+  * @brief Find similar nodes to the selected one
+  */
+  pnodegroup_list_t gsgv_actions_t::find_similar(intvec_t &sel_nodes)
+  {
+    //TODO:
+    int_2dvec_t ng_vec;
+    if (!py_matcher->FindSimilar(sel_nodes, ng_vec) || ng_vec.empty())
+      return NULL;
+
+    // Build NG
+    pnodegroup_list_t ngl = new nodegroup_list_t();
+    for (int_2dvec_t::iterator it_ng= ng_vec.begin();
+         it_ng != ng_vec.end();
+         ++it_ng)
+    {
+      // Build NG
+      pnodegroup_t ng = ngl->add_nodegroup();
+
+      intvec_t &nodes_vec = *it_ng;
+
+      // Build nodes
+      for (intvec_t::iterator it_nd = nodes_vec.begin();
+           it_nd != nodes_vec.end();
+           ++it_nd)
+      {
+        int nid = *it_nd;
+        nodeloc_t *loc = gm->find_nodeid_loc(nid);
+        if (loc == NULL)
+          continue;
+        else
+          ng->add_node(loc->nd);
+      }
+    }
+    return ngl;
+  }
+
+  /**
   * @brief Populate chooser lines
   */
   void populate_chooser_lines()
@@ -2361,14 +2519,30 @@ private:
   }
 
   /**
+  * @brief Get the flowchart at the given EA and displays an error message on failure
+  */
+  bool get_flowchart(ea_t startEA)
+  {
+    // Build the flowchart once
+    if (!get_func_flowchart(startEA, func_fc))
+    {
+      msg(STR_GS_MSG "Could not build function flow chart at %a\n", startEA);
+      return false;
+    }
+    return true;
+  }
+
+  /**
   * @brief Handles chooser initialization
   */
   void on_init()
   {
     // Chooser was shown, now create a menu item
-    idm_save_bbfile = add_menu("Save bbgroup file", s_onmenu_save_bbfile, "Ctrl-S");
-    idm_show_graph  = add_menu("Show graph", s_onmenu_show_graph);
-#ifdef _DEBUG
+    add_menu("Save bbgroup file",         s_onmenu_save_bbfile, "Ctrl-S");
+    add_menu("Show graph",                s_onmenu_show_graph);
+    add_menu("Analyze",                   s_onmenu_analyze);
+    add_menu("Automatically find path",   s_onmenu_auto_find_path);
+#ifdef MY_DEBUG
     const char *fn;
     
     //TODO: fix me; file not found -> crash on exit
@@ -2379,8 +2553,9 @@ private:
     //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\f1.bbgroup";
     //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\doit.bbgroup";
     //fn = "c:\\temp\\x.bbgroup";
-    fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\f2.bbgroup";
-    load_file_show_graph(fn);
+    //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\f2.bbgroup";
+    //load_file_show_graph(fn);
+    onmenu_analyze();
 #endif
   }
 
@@ -2451,9 +2626,8 @@ public:
 
     gsgv = NULL;
     gm = NULL;
-    idm_save_bbfile = -1;
-    idm_show_graph = -1;
     py_matcher = NULL;
+    gm = new groupman_t();
   }
 
   /**
@@ -2465,6 +2639,23 @@ public:
     delete py_matcher;
   }
 
+  /**
+  * @brief Add a chooser menu
+  */
+  inline bool add_menu(
+      const char *name, 
+      chooser_cb_t cb,
+      const char *hotkey = NULL)
+  {
+    return add_chooser_command(
+              TITLE_GS_PANEL,
+              name,
+              cb,
+              hotkey,
+              -1,
+              -1,
+              CHOOSER_POPUP_MENU);
+  }
   /**
   * @brief Close the graph view
   */
@@ -2508,16 +2699,12 @@ public:
     func_t *f = get_func(nd->start);
     if (f == NULL)
     {
-      msg("Input file does not related to a defined function!\n");
+      msg(STR_GS_MSG "Input file does not related to a defined function!\n");
       return false;
     }
 
-    // Build the flowchart once
-    if (!get_func_flowchart(f->startEA, func_fc))
-    {
-      msg("Could not build function flow chart at %a\n", f->startEA);
+    if (!get_flowchart(f->startEA))
       return false;
-    }
 
     // De-optimize the input file
     if (sanitize_groupman(BADADDR, gm, &func_fc))
@@ -2528,6 +2715,14 @@ public:
 
     populate_chooser_lines();
     return true;
+  }
+
+  /**
+  * @brief Save BB group file
+  */
+  bool save_file(const char *filename)
+  {
+    return gm->emit(filename);
   }
 
   /**
@@ -2573,23 +2768,6 @@ public:
     return true;
   }
 
-  /**
-  * @brief Add a chooser menu
-  */
-  inline bool add_menu(
-      const char *name, 
-      chooser_cb_t cb,
-      const char *hotkey = NULL)
-  {
-    return add_chooser_command(
-              TITLE_GS_PANEL,
-              name,
-              cb,
-              hotkey,
-              -1,
-              -1,
-              CHOOSER_POPUP_MENU);
-  }
 };
 gschooser_t *gschooser_t::singleton = NULL;
 

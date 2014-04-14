@@ -57,9 +57,9 @@ public:
   void deinit();
 
   /**
-  * @brief Analyze and set the internal state
+  * @brief Analyze and return the non-overlapping wellformed function instances	
   */
-  bool Analyze(ea_t func_addr);
+  void Analyze(ea_t func_addr, int_3dvec_t &result);
 
   /**
   * @brief Load state

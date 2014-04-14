@@ -3,6 +3,27 @@
 //
 //--------------------------------------------------------------------------
 
+//---------------------------------------------------------------------------
+class gil_lock_t
+{
+private:
+    PyGILState_STATE state;
+public:
+    gil_lock_t()
+    {
+        state = PyGILState_Ensure();
+    }
+
+    ~gil_lock_t()
+    {
+        PyGILState_Release(state);
+    }
+};
+
+//--------------------------------------------------------------------------
+// Declare a variable to acquire/release the GIL
+#define PYW_GIL_GET gil_lock_t _lock;
+
 //--------------------------------------------------------------------------
 #ifdef __EA64__
   #define PY_FMT64  "K"

@@ -168,6 +168,7 @@
     <ClInclude Include="colorgen.h" />
     <ClInclude Include="pybbmatcher.h" />
     <ClInclude Include="pywraps.hpp" />
+    <ClInclude Include="types.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="sdk">
