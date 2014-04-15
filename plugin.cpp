@@ -73,7 +73,7 @@ History
                                 - Added "Reset groupping"
 11/07/2013 - eliasb             - Removed the Orthogonal layout was not implemented in IDA <=6.4, causing a "not yet" messages
                                 - Added initial Python adapter code
-
+04/15/2014 - eliasb             - Try to load screen function bbgroup on load
 TODO
 -----------
 
@@ -104,6 +104,8 @@ TODO
 #define MY_TABSTR "    "
 
 #define STR_GS_MSG "GS: "
+
+#define BBGROUP_EXT "bbgroup"
 
 //--------------------------------------------------------------------------
 static const char STR_CANNOT_BUILD_F_FC[] = "Cannot build function flowchart!";
@@ -240,6 +242,7 @@ public:
   * @brief The GSGV is closing
   */
   virtual void notify_close() = 0;
+
   /**
   * @brief The GSGV content is refreshing
   */
@@ -1990,7 +1993,7 @@ private:
   {
     const char *filename = askfile_c(
         1, 
-        last_loaded_file.empty() ? "*.bbgroup" : last_loaded_file.c_str(), 
+        last_loaded_file.empty() ? "*." BBGROUP_EXT : last_loaded_file.c_str(), 
         "Please select BBGROUP file to save to");
 
     if (filename == NULL)
@@ -2023,7 +2026,7 @@ private:
     if (!get_flowchart(f->startEA))
       return;
 
-    /*RESET GROUPPING*/
+    // reset groupping
     if (options.no_initial_path_info)
     {
       // Retrieve initial groupping information
@@ -2225,7 +2228,7 @@ private:
   */
   void on_insert()
   {
-    const char *filename = askfile_c(0, "*.bbgroup", "Please select BBGROUP file to load");
+    const char *filename = askfile_c(0, "*." BBGROUP_EXT, "Please select BBGROUP file to load");
     if (filename == NULL)
       return;
 
@@ -2543,7 +2546,7 @@ private:
     add_menu("Analyze",                   s_onmenu_analyze);
     add_menu("Automatically find path",   s_onmenu_auto_find_path);
 #ifdef MY_DEBUG
-    const char *fn;
+    const char *fn = get_screen_function_fn(BBGROUP_EXT);
     
     //TODO: fix me; file not found -> crash on exit
     //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\f1.bbgroup";
@@ -2554,8 +2557,11 @@ private:
     //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\doit.bbgroup";
     //fn = "c:\\temp\\x.bbgroup";
     //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\f2.bbgroup";
-    //load_file_show_graph(fn);
-    onmenu_analyze();
+
+    if (!load_file_show_graph(fn))
+    {
+        onmenu_analyze();
+    }
 #endif
   }
 
