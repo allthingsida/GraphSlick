@@ -1,5 +1,6 @@
 #include "util.h"
 #include <kernwin.hpp>
+#include <prodir.h>
 
 /*--------------------------------------------------------------------------
 
@@ -25,6 +26,30 @@ asize_t str2asizet(const char *str)
   ea_t v;
   qsscanf(str, "%a", &v);
   return (asize_t)v;
+}
+
+//--------------------------------------------------------------------------
+const char *get_screen_function_fn(const char *ext)
+{
+    func_t *fnc = get_func(get_screen_ea());
+    if (fnc == NULL)
+        return NULL;
+    
+    static char buf[QMAXPATH] = { 0 };
+
+    // Copy database path global var
+    set_file_ext(buf, qnumber(buf), database_idb, "");
+    size_t t = qstrlen(buf);
+    if (t > 0 && buf[t - 1] == '.')
+        buf[t - 1] = '\0';
+
+    // format as: dir/file/func->startEA . ext
+    static qstring s;
+    
+    s = buf;
+    s.cat_sprnt("-%08a.%s", fnc->startEA, ext);
+
+     return s.c_str();
 }
 
 //--------------------------------------------------------------------------

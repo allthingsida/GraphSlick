@@ -82,4 +82,11 @@ char *skip_spaces(char *p);
 */
 bool is_ida_gui();
 
+
+//--------------------------------------------------------------------------
+/**
+* @brief Returns a file name containing the idbpath and function start EA
+*/
+const char *get_screen_function_fn(const char *ext = ".bin");
+
 #endif
