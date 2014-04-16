@@ -74,6 +74,7 @@ History
 11/07/2013 - eliasb             - Removed the Orthogonal layout was not implemented in IDA <=6.4, causing a "not yet" messages
                                 - Added initial Python adapter code
 04/15/2014 - eliasb             - Try to load screen function bbgroup on load
+                                - Added PUBLIC define to compile-out a few experimental features
 TODO
 -----------
 
@@ -84,8 +85,9 @@ TODO
 [ ] Augment bbload to call py::load ; same for SAVE
 [ ] py::load should return
 [ ] bug: somehow ungroupping all nodes is not correct, when analyze is used -> i experienced a crash
-*/
+--------------------------------------------------------------------------*/
 
+//--------------------------------------------------------------------------
 #pragma warning(disable: 4018 4800)
 
 #include <ida.hpp>
@@ -99,6 +101,9 @@ TODO
 #include "algo.hpp"
 #include "colorgen.h"
 #include "pybbmatcher.h"
+
+//--------------------------------------------------------------------------
+#define PUBLIC
 
 //--------------------------------------------------------------------------
 #define MY_TABSTR "    "
@@ -199,7 +204,7 @@ struct gsoptions_t
     highlight_syntethic_nodes = false;
     show_options_dialog_next_time = true;
     enlarge_group_name = true;
-    start_view_mode = gvrfm_single_mode; //gvrfm_combined_mode;//gvrfm_single_mode;
+    start_view_mode = gvrfm_combined_mode; // gvrfm_single_mode;
     debug = true;
     graph_layout = layout_digraph;
     //;!
@@ -310,26 +315,26 @@ private:
   /**
   * @brief Menu item IDs
   */
-  int idm_single_view_mode, idm_combined_view_mode;
+  int idm_single_view_mode = -1, idm_combined_view_mode = -1;
 
-  int idm_clear_sel, idm_clear_highlight, idm_select_all;
-  int idm_merge_highlight_with_selection;
-  int idm_jump_next_selected_node, idm_jump_next_highlighted_node;
-  int idm_set_sel_mode;
+  int idm_clear_sel = -1, idm_clear_highlight = -1, idm_select_all = -1;
+  int idm_merge_highlight_with_selection = -1;
+  int idm_jump_next_selected_node, idm_jump_next_highlighted_node = -1;
+  int idm_set_sel_mode = -1;
 
-  int idm_edit_sg_desc;
-  int idm_change_graph_layout;
+  int idm_edit_sg_desc = -1;
+  int idm_change_graph_layout = -1;
 
-  int idm_remove_nodes_from_group;
-  int idm_promote_node_groups;
-  int idm_reset_groupping;
+  int idm_remove_nodes_from_group = -1;
+  int idm_promote_node_groups = -1;
+  int idm_reset_groupping = -1;
 
-  int idm_test;
-  int idm_highlight_similar, idm_find_highlight;
+  int idm_test = -1;
+  int idm_highlight_similar = -1, idm_find_highlight = -1;
 
-  int idm_combine_ngs;
+  int idm_combine_ngs = -1;
 
-  int idm_show_options;
+  int idm_show_options = -1;
 
   bool in_sel_mode;
 
@@ -1807,9 +1812,10 @@ public:
     idm_combined_view_mode            = add_menu("Switch to groupped view",         "G");
 
     // Experimental actions
+#ifndef PUBLIC
     add_menu("-");
     idm_test                          = add_menu("Test",                            "Q");
-
+#endif
     // Searching actions
     add_menu("-");
     idm_highlight_similar             = add_menu("Highlight similar nodes",         "M");
@@ -1817,12 +1823,12 @@ public:
 
     //
     // Groupping actions
-
     idm_combine_ngs                   = add_menu("Combine nodes",                   "C");
+#ifndef PUBLIC
     idm_remove_nodes_from_group       = add_menu("Move node(s) to their own group", "R");
     idm_promote_node_groups           = add_menu("Promote node group",              "P");
     idm_reset_groupping               = add_menu("Reset groupping",                 "T");
-
+#endif
     // Edit group description menu
     idm_edit_sg_desc                  = add_menu("Edit group description",          "E");
 
@@ -1996,55 +2002,59 @@ private:
         last_loaded_file.empty() ? "*." BBGROUP_EXT : last_loaded_file.c_str(), 
         "Please select BBGROUP file to save to");
 
-    if (filename == NULL)
+    if (filename == NULL || gm == NULL)
       return;
 
-    return;
+    gm->emit(filename);
   }
 
   /**
   * @brief TODO
   */
-  void onmenu_analyze()
+  void onmenu_analyze(const char *def_filename = NULL)
   {
-    func_t *f = get_func(get_screen_ea());
-    if (f == NULL)
-    {
-      msg(STR_GS_MSG "No function at the cursor location!");
-      return;
-    }
-    
-    // Call Analyzer
-    int_3dvec_t result;
-    py_matcher->Analyze(f->startEA, result);
-    if (result.empty())
-    {
-      msg(STR_GS_MSG "Failed to analyze function at %a\n", f->startEA);
-      return;
-    }
+      func_t *f = get_func(get_screen_ea());
+      if (f == NULL)
+      {
+          msg(STR_GS_MSG "No function at the cursor location!");
+          return;
+      }
 
-    if (!get_flowchart(f->startEA))
-      return;
+      // Call Analyzer
+      int_3dvec_t result;
+      py_matcher->Analyze(f->startEA, result);
 
-    // reset groupping
-    if (options.no_initial_path_info)
-    {
-      // Retrieve initial groupping information
-      build_groupman_from_fc(&func_fc, gm, true);
-    }
-    else
-    {
-      // Build the groupping information from the analyze() result
-      build_groupman_from_3dvec(&func_fc, result, gm, true);
-    }
+      if (!get_flowchart(f->startEA))
+          return;
 
-    // Refresh the chooser
-    refresh(true);
+      // reset groupping
+      if (result.empty() || options.no_initial_path_info)
+      {
+          // Retrieve initial groupping information
+          build_groupman_from_fc(&func_fc, gm, true);
+      }
+      else
+      {
+          if (result.empty())
+          {
+              msg(STR_GS_MSG "Failed to analyze function at %a\n", f->startEA);
+              return;
+          }
 
-    if (gsgv == NULL)
-      show_graph();
-    else
-      gsgv->redo_current_layout();
+          // Build the groupping information from the analyze() result
+          build_groupman_from_3dvec(&func_fc, result, gm, true);
+      }
+
+      if (gm->src_filename.empty() && def_filename != NULL)
+          gm->src_filename = def_filename;
+
+      // Refresh the chooser
+      refresh(true);
+
+      if (gsgv == NULL)
+          show_graph();
+      else
+          gsgv->redo_current_layout();
   }
 
   /**
@@ -2375,6 +2385,7 @@ private:
   */
   void on_refresh()
   {
+      //s_onmenu_save_bbfile
   }
 
   /**
@@ -2540,11 +2551,6 @@ private:
   */
   void on_init()
   {
-    // Chooser was shown, now create a menu item
-    add_menu("Save bbgroup file",         s_onmenu_save_bbfile, "Ctrl-S");
-    add_menu("Show graph",                s_onmenu_show_graph);
-    add_menu("Analyze",                   s_onmenu_analyze);
-    add_menu("Automatically find path",   s_onmenu_auto_find_path);
 #ifdef MY_DEBUG
     const char *fn = get_screen_function_fn(BBGROUP_EXT);
     
@@ -2560,7 +2566,9 @@ private:
 
     if (!load_file_show_graph(fn))
     {
-        onmenu_analyze();
+        onmenu_analyze(fn);
+        gm->src_filename = fn;
+        last_loaded_file = fn;
     }
 #endif
   }
@@ -2577,6 +2585,12 @@ private:
 
     set_dock_pos(TITLE_GS_PANEL, STR_OUTWIN_TITLE, DP_RIGHT);
     set_dock_pos(STR_GS_VIEW, STR_IDAVIEWA_TITLE, DP_INSIDE);
+
+    // Chooser was shown, now create a menu item
+    add_menu("Save bbgroup file", s_onmenu_save_bbfile, "Ctrl-S");
+    add_menu("Show graph", s_onmenu_show_graph);
+    add_menu("Analyze", s_onmenu_analyze);
+    add_menu("Automatically find path", s_onmenu_auto_find_path);
   }
 
   /**
@@ -2680,47 +2694,57 @@ public:
   */
   bool load_file(const char *filename)
   {
-    // Delete the previous group manager
-    delete gm;
-    gm = new groupman_t();
+      groupman_t *ngm = new groupman_t();
 
-    // Load a file and parse it
-    // (don't init cache yet because file may be optimized)
-    if (!gm->parse(filename, false))
-    {
-      msg(STR_GS_MSG "Error: failed to parse group file '%s'\n", filename);
-      delete gm;
+      do 
+      {
+          // Load a file and parse it
+          // (don't init cache yet because file may be optimized)
+          if (!ngm->parse(filename, false))
+          {
+              msg(STR_GS_MSG "Error: failed to parse group file '%s'\n", filename);
+              break;
+          }
+
+          // Get an address from the parsed file
+          nodedef_t *nd = ngm->get_first_nd();
+          if (nd == NULL)
+          {
+              msg(STR_GS_MSG "Invalid input file! No addresses defined\n");
+              break;
+          }
+
+          // Get related function
+          func_t *f = get_func(nd->start);
+          if (f == NULL)
+          {
+              msg(STR_GS_MSG "Input file does not related to a defined function!\n");
+              break;
+          }
+
+          if (!get_flowchart(f->startEA))
+              break;
+
+          // De-optimize the input file
+          if (sanitize_groupman(BADADDR, ngm, &func_fc))
+          {
+              // Now initialize the cache
+              ngm->initialize_lookups();
+          }
+
+          // Delete the previous group manager
+          delete gm;
+
+          // Assign new group manager
+          gm = ngm;
+
+          populate_chooser_lines();
+
+          return true;
+      } while (false);
+
+      delete ngm;
       return false;
-    }
-
-    // Get an address from the parsed file
-    nodedef_t *nd = gm->get_first_nd();
-    if (nd == NULL)
-    {
-      msg(STR_GS_MSG "Invalid input file! No addresses defined\n");
-      return false;
-    }
-
-    // Get related function
-    func_t *f = get_func(nd->start);
-    if (f == NULL)
-    {
-      msg(STR_GS_MSG "Input file does not related to a defined function!\n");
-      return false;
-    }
-
-    if (!get_flowchart(f->startEA))
-      return false;
-
-    // De-optimize the input file
-    if (sanitize_groupman(BADADDR, gm, &func_fc))
-    {
-      // Now initialize the cache
-      gm->initialize_lookups();
-    }
-
-    populate_chooser_lines();
-    return true;
   }
 
   /**
