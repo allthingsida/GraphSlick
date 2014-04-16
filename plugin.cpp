@@ -75,6 +75,8 @@ History
                                 - Added initial Python adapter code
 04/15/2014 - eliasb             - Try to load screen function bbgroup on load
                                 - Added PUBLIC define to compile-out a few experimental features
+04/16/2014 - eliasb             - Added NO_PYTHON compile define
+
 TODO
 -----------
 
@@ -103,7 +105,9 @@ TODO
 #include "pybbmatcher.h"
 
 //--------------------------------------------------------------------------
+// Some defines
 #define PUBLIC
+//#define NO_PYTHON
 
 //--------------------------------------------------------------------------
 #define MY_TABSTR "    "
@@ -2022,8 +2026,9 @@ private:
 
       // Call Analyzer
       int_3dvec_t result;
+#ifndef NO_PYTHON
       py_matcher->Analyze(f->startEA, result);
-
+#endif
       if (!get_flowchart(f->startEA))
           return;
 
@@ -2360,12 +2365,13 @@ private:
     if (chi.popup_names != NULL)
       qfree((void *)chi.popup_names);
 
+    // Close the associated graph
+    close_graph();
+
     // Delete the group manager
     delete gm;
     gm = NULL;
 
-    // Close the associated graph
-    close_graph();
     delete_singleton();
   }
 
@@ -2454,6 +2460,7 @@ private:
   */
   pnodegroup_list_t gsgv_actions_t::find_similar(intvec_t &sel_nodes)
   {
+#ifndef NO_PYTHON
     //TODO:
     int_2dvec_t ng_vec;
     if (!py_matcher->FindSimilar(sel_nodes, ng_vec) || ng_vec.empty())
@@ -2484,6 +2491,9 @@ private:
       }
     }
     return ngl;
+#else
+      return NULL;
+#endif
   }
 
   /**
@@ -2552,25 +2562,24 @@ private:
   void on_init()
   {
 #ifdef MY_DEBUG
+      //TODO: fix me; file not found -> crash on exit
+      //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\f1.bbgroup";
+
+      //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\main.bbgroup";
+      //fn = "P:\\Tools\\idadev\\plugins\\workfile-1.bbgroup";
+      //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\f1.bbgroup";
+      //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\doit.bbgroup";
+      //fn = "c:\\temp\\x.bbgroup";
+      //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\f2.bbgroup";
+#endif
     const char *fn = get_screen_function_fn(BBGROUP_EXT);
     
-    //TODO: fix me; file not found -> crash on exit
-    //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\f1.bbgroup";
-
-    //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\bin\\v1\\x86\\main.bbgroup";
-    //fn = "P:\\Tools\\idadev\\plugins\\workfile-1.bbgroup";
-    //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\f1.bbgroup";
-    //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\doit.bbgroup";
-    //fn = "c:\\temp\\x.bbgroup";
-    //fn = "P:\\projects\\experiments\\bbgroup\\sample_c\\InlineTest\\f2.bbgroup";
-
     if (!load_file_show_graph(fn))
     {
         onmenu_analyze(fn);
         gm->src_filename = fn;
         last_loaded_file = fn;
     }
-#endif
   }
 
   /**
@@ -2760,6 +2769,7 @@ public:
   */
   bool init_python()
   {
+#ifndef NO_PYTHON
     char init_script[MAXSTR];
 
     qmakepath(init_script, sizeof(init_script), idadir(PLG_SUBDIR), STR_GS_PY_PLGFILE, NULL);
@@ -2773,6 +2783,7 @@ public:
       py_matcher = NULL;
       return false;
     }
+#endif
     return true;
   }
 
