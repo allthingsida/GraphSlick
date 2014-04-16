@@ -3,6 +3,7 @@ History
 --------
 
 11/07/2013 - eliasb             - Initial version
+04/15/2014 - eliasb             - Check the result of PyAnalyze() before converting the result to C structs
 --------------------------------------------------------------------------*/
 
 #include "pybbmatcher.h"
@@ -123,7 +124,8 @@ void PyBBMatcher::Analyze(ea_t func_addr, int_3dvec_t &result)
     PyObject *py_ret = PyObject_CallFunctionObjArgs(py_meth_analyze, py_func_addr, NULL);
     Py_DECREF(py_func_addr);
 
-    PyW_PyListListToIntVecVecVec(py_ret, result);
+    if (py_ret != NULL)
+        PyW_PyListListToIntVecVecVec(py_ret, result);
 
     Py_XDECREF(py_ret);
 }
