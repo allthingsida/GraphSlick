@@ -99,7 +99,7 @@ void build_groupman_from_3dvec(
   gm->clear();
 
   gm->src_filename = "noname.bbgroup";
-
+  
   // Build groupman
   int sg_id = 0;
   for (int_3dvec_t::iterator it_sg=path.begin();
@@ -169,12 +169,14 @@ bool sanitize_groupman(
   int nodes_count = fc->size();
 
   nid2ndef_t *nds = gm->get_nds();
+
   // Verify that all nodes are present
   for (int n=0; n < nodes_count; n++)
   {
     nid2ndef_t::iterator it = nds->find(n);
     if (it != nds->end())
       continue;
+
     // Convert basic block to an ND
     qbasic_block_t &block = fc->blocks[n];
     pnodedef_t nd = new nodedef_t();
@@ -196,8 +198,10 @@ bool sanitize_groupman(
   {
     // Found at least one orphan node, add it to the groupman
     missing_sg->name = missing_sg->id = "orphan_nodes";
+
     // This is a synthetic group
     missing_sg->is_synthetic = true;
+
     gm->add_supergroup(
           gm->get_path_sgl(),
           missing_sg);
