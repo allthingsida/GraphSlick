@@ -30,8 +30,9 @@ History
                                 - added added nodegroup_list_t.add_nodegroup()
 --------------------------------------------------------------------------*/
 
-#include "groupman.h"
 #define USE_STANDARD_FILE_FUNCTIONS
+#define USE_DANGEROUS_FUNCTIONS
+#include "groupman.h"
 #include <fpro.h>
 #include <string>
 #include <fstream>

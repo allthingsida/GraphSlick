@@ -11,7 +11,7 @@ History
 
 //--------------------------------------------------------------------------
 // Consts
-const char STR_PY_MATCH_MODULE[] = "bb_match_final";
+const char STR_PY_MATCH_MODULE[] = "bb_match";
 
 //------------------------------------------------------------------------
 // Helper function to get globals for the __main__ module
