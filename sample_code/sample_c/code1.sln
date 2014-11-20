@@ -1,0 +1,41 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2012
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "code1", "code1.vcxproj", "{75680022-7B8C-4C67-A0C1-D51DB40B52B1}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|ARM = Debug|ARM
+		Debug|Win32 = Debug|Win32
+		Debug|x64 = Debug|x64
+		InlineTest|ARM = InlineTest|ARM
+		InlineTest|Win32 = InlineTest|Win32
+		InlineTest|x64 = InlineTest|x64
+		Release|ARM = Release|ARM
+		Release|Win32 = Release|Win32
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.Debug|ARM.ActiveCfg = Debug|ARM
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.Debug|ARM.Build.0 = Debug|ARM
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.Debug|Win32.ActiveCfg = Debug|Win32
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.Debug|Win32.Build.0 = Debug|Win32
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.Debug|x64.ActiveCfg = Debug|x64
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.Debug|x64.Build.0 = Debug|x64
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.InlineTest|ARM.ActiveCfg = InlineTest|ARM
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.InlineTest|ARM.Build.0 = InlineTest|ARM
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.InlineTest|Win32.ActiveCfg = InlineTest|Win32
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.InlineTest|Win32.Build.0 = InlineTest|Win32
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.InlineTest|x64.ActiveCfg = InlineTest|x64
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.InlineTest|x64.Build.0 = InlineTest|x64
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.Release|ARM.ActiveCfg = Release|ARM
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.Release|ARM.Build.0 = Release|ARM
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.Release|Win32.ActiveCfg = Release|Win32
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.Release|Win32.Build.0 = Release|Win32
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.Release|x64.ActiveCfg = Release|x64
+		{75680022-7B8C-4C67-A0C1-D51DB40B52B1}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
